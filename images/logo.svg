@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 480" role="img" aria-label="Beaded Finery">
+  <defs>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Sacramento&amp;family=Poppins:wght@500&amp;display=swap');
+      .script { font-family: 'Sacramento', 'Brush Script MT', cursive; fill: #F7F4EE; }
+      .sub    { font-family: 'Poppins', 'Century Gothic', sans-serif; fill: #F7F4EE; letter-spacing: 14px; }
+    </style>
+  </defs>
+  <rect width="480" height="480" rx="90" fill="#7A4667"/>
+  <text class="script" x="240" y="270" font-size="170" text-anchor="middle">Beaded</text>
+  <text class="sub" x="252" y="330" font-size="34" text-anchor="middle">FINERY</text>
+</svg>

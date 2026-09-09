@@ -1,0 +1,10 @@
+{
+  "name": "beaded-finery",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Beaded Finery — handmade beaded jewelry storefront + owner admin",
+  "dependencies": {
+    "@upstash/redis": "^1.34.3"
+  }
+}
