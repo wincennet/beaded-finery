@@ -510,6 +510,9 @@ const DEFAULT_STATE = {
   ship: SHIP_DEFAULT,
   checkoutCountry: '',       // customer-selected at checkout
   adminTab: 'products',
+  showDemoModal: false,
+  demoScan: null,
+  demoPick: [],
 };
 
 let S = load();
@@ -950,7 +953,10 @@ function isDemoReview(f) {
 }
 const isDemoProduct = p => DEMO_SEED_NAMES.has(String(p.name || '').trim().toLowerCase().replace(/\s+/g, ' '));
 
-async function deleteDemoData(btn) {
+const DEMO_EP = { order: '/api/orders', review: '/api/feedback', product: '/api/products' };
+
+/* scan the server for sample data and open the pick-what-to-delete modal */
+async function scanDemoData(btn) {
   if (btn) btn.classList.add('loading');
   try {
     const [orders, reviews, products] = await Promise.all([
@@ -958,38 +964,107 @@ async function deleteDemoData(btn) {
       fetch('/api/feedback', { headers: adminHeaders() }).then(r => r.ok ? r.json() : []),
       fetch('/api/products').then(r => r.ok ? r.json() : []),
     ]);
-    const dO = (orders || []).filter(isDemoOrder);
-    const dR = (reviews || []).filter(isDemoReview);
-    const dP = (products || []).filter(isDemoProduct);
-    if (!dO.length && !dR.length && !dP.length) {
-      toast('No sample data found — nothing to delete', 'ok');
-      if (btn) btn.classList.remove('loading');
-      return;
-    }
-    const msg = 'Delete the built-in sample data?\n\n'
-      + `• ${dO.length} sample order(s)${dO.length ? ': ' + dO.map(o => o.name || o.id).join(', ') : ''}\n`
-      + `• ${dR.length} sample review(s)${dR.length ? ': ' + dR.map(r => r.name).join(', ') : ''}\n`
-      + `• ${dP.length} starter product(s)${dP.length ? ' (Gulnaar Bangle, Noor Bangle Pair, …)' : ''}\n\n`
-      + "Your client's own products and any real orders are kept. This cannot be undone.";
-    if (!confirm(msg)) { if (btn) btn.classList.remove('loading'); return; }
-    let done = 0, failed = 0;
-    const del = async (url, id) => {
-      try {
-        const r = await fetch(url, { method: 'DELETE', headers: adminHeaders(), body: JSON.stringify({ id }) });
-        r.ok ? done++ : failed++;
-      } catch (e) { failed++; }
-    };
-    for (const o of dO) await del('/api/orders', o.id);
-    for (const f of dR) await del('/api/feedback', f.id);
-    for (const p of dP) await del('/api/products', p.id);
-    S.orders = (S.orders || []).filter(o => !dO.some(x => x.id === o.id));
-    save();
-    toast(`Deleted ${done} sample item${done === 1 ? '' : 's'}` + (failed ? ` · ${failed} failed` : ''), failed ? 'err' : 'ok');
-    syncOrders(); loadAllReviews(); loadProducts();
+    const items = [];
+    (orders || []).filter(isDemoOrder).forEach(o => items.push({
+      key: 'order:' + o.id, type: 'order', id: o.id,
+      label: (o.name || o.id), sub: `${o.id} · ${money(o.total || 0)}${o.date ? ' · ' + o.date : ''}`,
+    }));
+    (reviews || []).filter(isDemoReview).forEach(f => items.push({
+      key: 'review:' + f.id, type: 'review', id: f.id,
+      label: (f.name || 'Review'), sub: `"${String(f.message || '').slice(0, 60)}"`,
+    }));
+    (products || []).filter(isDemoProduct).forEach(p => items.push({
+      key: 'product:' + p.id, type: 'product', id: p.id,
+      label: p.name, sub: `${p.category || ''} · ${money(p.price || 0)}`,
+    }));
+    if (!items.length) { toast('No sample data found — nothing to delete', 'ok'); return; }
+    S.demoScan = items;
+    S.demoPick = items.map(i => i.key);           // everything ticked by default
+    S.showDemoModal = true;
+    render();
   } catch (e) {
-    toast('Cleanup failed — make sure you are signed in', 'err');
+    toast('Could not load — make sure you are signed in', 'err');
+  } finally {
+    if (btn) btn.classList.remove('loading');
   }
+}
+function closeDemoModal() { S.showDemoModal = false; S.demoScan = null; S.demoPick = []; render(); }
+function toggleDemoPick(key) {
+  const i = S.demoPick.indexOf(key);
+  if (i === -1) S.demoPick.push(key); else S.demoPick.splice(i, 1);
+  render();
+}
+function demoPickGroup(type, on) {
+  const keys = (S.demoScan || []).filter(x => x.type === type).map(x => x.key);
+  S.demoPick = on
+    ? [...new Set([...S.demoPick, ...keys])]
+    : S.demoPick.filter(k => !keys.includes(k));
+  render();
+}
+async function runDemoDelete(btn) {
+  const picked = (S.demoScan || []).filter(x => S.demoPick.includes(x.key));
+  if (!picked.length) return;
+  if (btn) btn.classList.add('loading');
+  let done = 0, failed = 0;
+  for (const it of picked) {
+    try {
+      const r = await fetch(DEMO_EP[it.type], { method: 'DELETE', headers: adminHeaders(), body: JSON.stringify({ id: it.id }) });
+      r.ok ? done++ : failed++;
+    } catch (e) { failed++; }
+  }
+  const goneOrderIds = picked.filter(p => p.type === 'order').map(p => p.id);
+  S.orders = (S.orders || []).filter(o => !goneOrderIds.includes(o.id));
+  save();
+  S.showDemoModal = false; S.demoScan = null; S.demoPick = [];
+  toast(`Deleted ${done} item${done === 1 ? '' : 's'}` + (failed ? ` · ${failed} failed` : ''), failed ? 'err' : 'ok');
+  syncOrders(); loadAllReviews(); loadProducts();
   if (btn) btn.classList.remove('loading');
+}
+
+function DemoCleanupModal() {
+  if (!S.showDemoModal || !S.demoScan) return '';
+  const groups = [['order', 'Sample orders'], ['review', 'Sample reviews'], ['product', 'Starter products']];
+  const pick = new Set(S.demoPick);
+  const n = S.demoPick.length;
+  const section = ([type, title]) => {
+    const rows = S.demoScan.filter(x => x.type === type);
+    if (!rows.length) return '';
+    const allOn = rows.every(x => pick.has(x.key));
+    return `
+      <div class="mb-4">
+        <div class="flex items-center justify-between mb-1.5">
+          <p class="text-xs font-semibold uppercase tracking-wide" style="color:var(--sand)">${title} (${rows.length})</p>
+          <button onclick="demoPickGroup('${type}',${allOn ? 'false' : 'true'})" class="text-xs" style="color:var(--brand)">${allOn ? 'Clear all' : 'Select all'}</button>
+        </div>
+        <div class="space-y-1.5">
+          ${rows.map(x => `
+            <label class="flex items-start gap-2.5 rounded-lg p-2 cursor-pointer" style="background:var(--card)">
+              <input type="checkbox" ${pick.has(x.key) ? 'checked' : ''} onchange="toggleDemoPick('${x.key}')" class="mt-0.5 h-4 w-4 accent-[var(--brand)] shrink-0">
+              <span class="min-w-0">
+                <span class="block text-sm font-medium truncate" style="color:var(--ink)">${x.label}</span>
+                <span class="block text-xs truncate" style="color:var(--sand)">${x.sub}</span>
+              </span>
+            </label>`).join('')}
+        </div>
+      </div>`;
+  };
+  return `
+  <div class="fixed inset-0 z-[120] flex items-center justify-center p-4">
+    <div onclick="closeDemoModal()" class="absolute inset-0 bg-black/45"></div>
+    <div class="relative w-full max-w-md rounded-2xl depth-3 flex flex-col max-h-[85vh]" style="background:#fff">
+      <div class="p-5 pb-3 border-b" style="border-color:var(--line)">
+        <h3 class="font-display text-lg font-bold" style="color:var(--brand)">Delete sample data</h3>
+        <p class="text-xs mt-1" style="color:var(--sand)">Tick what to remove. Your client's own products and real orders are not in this list.</p>
+      </div>
+      <div class="p-5 py-4 overflow-y-auto">
+        ${groups.map(section).join('') || `<p class="text-sm" style="color:var(--sand)">Nothing to show.</p>`}
+      </div>
+      <div class="p-4 border-t flex items-center gap-2" style="border-color:var(--line)">
+        <button onclick="closeDemoModal()" class="btn btn-ghost px-4 py-2.5 text-sm flex-1"><span class="btn-label">Cancel</span></button>
+        <button onclick="runDemoDelete(this)" ${n ? '' : 'disabled'} class="btn btn-primary px-4 py-2.5 text-sm flex-1" style="${n ? '' : 'opacity:.5'}"><span class="btn-label">Delete ${n} selected</span></button>
+      </div>
+    </div>
+  </div>`;
 }
 
 /* ---- image upload: shrink the photo in the browser before storing it ---- */
@@ -2036,11 +2111,12 @@ function Admin() {
           <button onclick="S.adminTab='${k}';save();render();${k==='feedback'?'loadAllReviews()':k==='shipping'?'loadSettings()':''}" class="rounded-full px-5 py-2.5 text-sm font-medium transition-all duration-300 ${
             S.adminTab === k ? 'text-white depth-brand' : ''
           }" style="${S.adminTab === k ? 'background:var(--brand)' : 'background:var(--card);color:var(--ink)'}">${l}${k==='feedback' && S.allReviews.filter(r=>!r.approved).length ? ` <span class="ml-1 inline-flex h-4 min-w-4 px-1 rounded-full text-[10px] items-center justify-center" style="background:${S.adminTab===k?'#fff':'var(--err)'};color:${S.adminTab===k?'var(--brand)':'#fff'}">${S.allReviews.filter(r=>!r.approved).length}</span>` : ''}</button>`).join('')}
-        ${S.adminTab === 'products' ? `<button onclick="restoreStarterCatalogue()" class="ml-auto rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--sand)">Restore starter catalogue</button>` : S.adminTab === 'orders' ? `<button onclick="deleteDemoData(this)" class="btn ml-auto rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--sand)"><span class="btn-label">🧹 Delete sample data</span></button><button onclick="resetAll()" class="rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--sand)">Reset local data</button>` : ''}
+        ${S.adminTab === 'products' ? `<button onclick="restoreStarterCatalogue()" class="ml-auto rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--sand)">Restore starter catalogue</button>` : S.adminTab === 'orders' ? `<button onclick="scanDemoData(this)" class="btn ml-auto rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--sand)"><span class="btn-label">🧹 Delete sample data</span></button><button onclick="resetAll()" class="rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--sand)">Reset local data</button>` : ''}
       </div>
 
       ${S.adminTab === 'products' ? AdminProducts() : S.adminTab === 'orders' ? AdminOrders() : S.adminTab === 'shipping' ? AdminShipping() : AdminFeedback()}
     </div>
+    ${DemoCleanupModal()}
   </div>`;
 }
 
@@ -2354,6 +2430,9 @@ S.loginError = '';
 S.editImg = '';
 S.editImgs = [];
 S.editingId = null;
+S.showDemoModal = false;
+S.demoScan = null;
+S.demoPick = [];
 S.checkoutCountry = '';
 S.cartOpen = S.wishlistOpen = S.searchOpen = false;
 S.searchQuery = '';
