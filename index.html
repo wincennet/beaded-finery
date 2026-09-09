@@ -464,28 +464,38 @@ function adminHeaders(json) {
   return h;
 }
 
-async function toggleView() {
-  if (S.view === 'admin') {
-    S.view = 'store'; S.route = 'home';
-    window.scrollTo({ top: 0 }); save(); render();
-    toast('Back to storefront', 'ok');
-    return;
-  }
-  // entering admin — require the owner password
+function exitAdmin() {
+  S.view = 'store'; S.route = 'home';
+  if (location.pathname.toLowerCase().startsWith('/admin')) history.replaceState(null, '', '/');
+  window.scrollTo({ top: 0 }); save(); render();
+  toast('Back to storefront', 'ok');
+}
+// Open the owner panel: reuse a stored session key, else prompt. Verifies against the API.
+async function enterAdmin(opts = {}) {
+  if (S.view === 'admin') return;
   let key = adminKey();
   if (!key) {
     key = (prompt('Owner password') || '').trim();
-    if (!key) return;
+    if (!key) { if (opts.fromUrl) history.replaceState(null, '', '/'); return; }
   }
   const ok = await fetch('/api/orders', { headers: { 'x-admin-key': key } }).then(r => r.ok).catch(() => false);
-  if (!ok) { setAdminKey(''); toast('Wrong password', 'err'); return; }
+  if (!ok) {
+    setAdminKey('');
+    toast('Wrong password', 'err');
+    if (opts.fromUrl) history.replaceState(null, '', '/');
+    return;
+  }
   setAdminKey(key);
+  if (location.pathname.toLowerCase() !== '/admin') history.replaceState(null, '', '/admin');
   S.view = 'admin'; S.route = 'home';
   window.scrollTo({ top: 0 }); save(); render(); syncOrders();
   toast('Owner Admin Panel', 'ok');
 }
+// single entry point used by the corner button
+function toggleView() { S.view === 'admin' ? exitAdmin() : enterAdmin(); }
 function signOutAdmin() {
   setAdminKey('');
+  history.replaceState(null, '', '/');
   S.view = 'store'; S.route = 'home';
   save(); render(); toast('Signed out', 'ok');
 }
@@ -672,7 +682,6 @@ function Store() {
   </main>
   ${Footer()}
   ${CartDrawer()}
-  ${ViewToggle()}
   `;
 }
 
@@ -1265,13 +1274,7 @@ function CartDrawer() {
   </div>`;
 }
 
-/* ---------- OWNER SIGN-IN (subtle, password-gated) ---------- */
-function ViewToggle() {
-  return `
-  <button onclick="toggleView()" title="Owner sign in" aria-label="Owner sign in"
-    class="fixed z-[90] bottom-4 right-4 h-9 w-9 rounded-full glass flex items-center justify-center opacity-30 hover:opacity-100 transition-opacity duration-300"
-    style="color:var(--brand)">${I.user}</button>`;
-}
+/* Owner reaches the panel at  beadedfinery.com/admin  (see BOOT). No visible control on the storefront. */
 
 /* -------------------------------------------------------------------- */
 /*  ADMIN                                                                */
@@ -1489,7 +1492,12 @@ function sectionHead(title, sub, left = false) {
 /* ==================================================================== */
 // Admin view always requires re-auth per browser session.
 if (S.view === 'admin' && !adminKey()) S.view = 'store';
+
+// beadedfinery.com/admin  → owner login
+const wantsAdmin = /^\/admin\/?$/i.test(location.pathname) || location.hash.toLowerCase() === '#admin';
+
 render();
+if (wantsAdmin) enterAdmin({ fromUrl: true });
 syncOrders();
 </script>
 </body>
