@@ -413,7 +413,11 @@ const DEFAULT_STATE = {
   route: 'home',            // 'home' | 'shop' | 'checkout'
   activeCategory: 'All',
   cartOpen: false,
+  wishlistOpen: false,
+  searchOpen: false,
+  searchQuery: '',
   cart: [],                 // { id, qty }
+  wishlist: [],             // [productId]
   checkoutStep: 1,
   shipping: { name:'', phone:'', email:'', address:'', city:'', postal:'', notes:'' },
   paymentMethod: 'Easypaisa',
@@ -471,7 +475,42 @@ function setQty(id, qty) {
   save(); render();
 }
 function clearCart() { S.cart = []; save(); render(); }
-function openCart(v) { S.cartOpen = v; document.body.classList.toggle('no-scroll', v); render(); }
+function closePanels() { S.cartOpen = S.wishlistOpen = S.searchOpen = false; }
+function openCart(v) { closePanels(); S.cartOpen = v; document.body.classList.toggle('no-scroll', v); render(); }
+function openWishlist(v) { closePanels(); S.wishlistOpen = v; document.body.classList.toggle('no-scroll', v); render(); }
+function openSearch(v) {
+  closePanels(); S.searchOpen = v; document.body.classList.toggle('no-scroll', v); render();
+  if (v) requestAnimationFrame(() => document.getElementById('search-input')?.focus());
+}
+function setSearch(q) { S.searchQuery = q; renderSearchResults(); }
+
+/* ---- wishlist ---- */
+const inWishlist = id => S.wishlist.includes(id);
+function toggleWishlist(id) {
+  const p = getProduct(id); if (!p) return;
+  if (inWishlist(id)) { S.wishlist = S.wishlist.filter(x => x !== id); toast('Removed from wishlist', 'ok'); }
+  else { S.wishlist = [id, ...S.wishlist]; toast(`${p.name} saved`, 'ok'); }
+  save(); render();
+}
+function wishlistToCart() {
+  S.wishlist.forEach(id => { const p = getProduct(id); if (p && p.stock && !S.cart.find(c => c.id === id)) S.cart.push({ id, qty: 1 }); });
+  save(); render(); toast('Wishlist moved to cart', 'ok');
+}
+
+/* ---- search ---- */
+function searchResults() {
+  const q = S.searchQuery.trim().toLowerCase();
+  if (q.length < 1) return [];
+  return S.products.filter(p =>
+    p.name.toLowerCase().includes(q) ||
+    p.category.toLowerCase().includes(q) ||
+    (p.desc || '').toLowerCase().includes(q)
+  ).slice(0, 12);
+}
+function renderSearchResults() {
+  const box = document.getElementById('search-results');
+  if (box) box.innerHTML = SearchResultsInner();
+}
 function goto(route) {
   S.route = route;
   if (route === 'checkout') S.checkoutStep = 1;
@@ -758,6 +797,7 @@ function pulseCart() {
 /* ==================================================================== */
 const I = {
   heart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-5 h-5"><path d="M12 21s-7-4.35-9.5-8.5C.5 8.5 3 4.5 7 5c2 .25 3.5 2 5 4 1.5-2 3-3.75 5-4 4-.5 6.5 3.5 4.5 7.5C19 16.65 12 21 12 21Z"/></svg>',
+  heartFill: '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M12 21s-7-4.35-9.5-8.5C.5 8.5 3 4.5 7 5c2 .25 3.5 2 5 4 1.5-2 3-3.75 5-4 4-.5 6.5 3.5 4.5 7.5C19 16.65 12 21 12 21Z"/></svg>',
   user: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-5 h-5"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-7 8-7s8 3 8 7"/></svg>',
   bag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-5 h-5"><path d="M6 8h12l1 12H5L6 8Z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-5 h-5"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
@@ -809,6 +849,8 @@ function Store() {
   </main>
   ${Footer()}
   ${CartDrawer()}
+  ${WishlistDrawer()}
+  ${SearchPanel()}
   `;
 }
 
@@ -841,12 +883,11 @@ function Header() {
       </nav>
 
       <div class="flex items-center gap-1 sm:gap-2" style="color:var(--ink)">
-        <button class="p-2 rounded-full hover:bg-white/60 transition" title="Search">${I.search}</button>
-        <button class="p-2 rounded-full hover:bg-white/60 transition hidden sm:inline-flex" title="Profile">${I.user}</button>
-        <button class="p-2 rounded-full hover:bg-white/60 transition relative" title="Wishlist">${I.heart}
-          <span class="absolute -right-0.5 -top-0.5 h-4 w-4 text-[10px] rounded-full text-white flex items-center justify-center" style="background:var(--sand)">3</span>
+        <button onclick="openSearch(true)" class="p-2 rounded-full hover:bg-white/60 transition" title="Search" aria-label="Search">${I.search}</button>
+        <button onclick="openWishlist(true)" class="p-2 rounded-full hover:bg-white/60 transition relative" title="Wishlist" aria-label="Wishlist">${I.heart}
+          <span class="absolute -right-0.5 -top-0.5 h-4 min-w-4 px-1 text-[10px] rounded-full text-white flex items-center justify-center ${S.wishlist.length?'':'hidden'}" style="background:var(--sand)">${S.wishlist.length}</span>
         </button>
-        <button id="cart-btn" onclick="openCart(true)" class="p-2 rounded-full hover:bg-white/60 transition relative" title="Cart">${I.bag}
+        <button id="cart-btn" onclick="openCart(true)" class="p-2 rounded-full hover:bg-white/60 transition relative" title="Cart" aria-label="Cart">${I.bag}
           <span class="absolute -right-0.5 -top-0.5 h-4 min-w-4 px-1 text-[10px] rounded-full text-white flex items-center justify-center ${cartCount()?'':'hidden'}" style="background:var(--brand)">${cartCount()}</span>
         </button>
       </div>
@@ -1040,8 +1081,11 @@ function ProductCard(p, i = 0) {
     <div class="relative overflow-hidden aspect-square">
       <div class="pcard-img w-full h-full">${p.img ? `<img src="${p.img}" alt="${p.name} — handmade beaded ${p.category.toLowerCase()} by Beaded Finery" loading="lazy" class="w-full h-full object-cover photo-crop">` : motif(p.category, 'p'+p.id)}</div>
       ${p.tag ? `<span class="absolute left-3 top-3 glass rounded-full px-3 py-1 text-[11px] font-semibold" style="color:var(--brand)">${p.tag}</span>` : ''}
-      ${!p.stock ? `<span class="absolute right-3 top-3 rounded-full px-3 py-1 text-[11px] font-semibold text-white" style="background:var(--err)">Sold out</span>`
-        : `<span class="absolute right-3 top-3 rounded-full px-3 py-1 text-[11px] font-semibold text-white" style="background:var(--ok)">In stock</span>`}
+      <button onclick="event.stopPropagation();toggleWishlist('${p.id}')" title="${inWishlist(p.id) ? 'Remove from wishlist' : 'Add to wishlist'}"
+        class="absolute right-3 top-3 h-8 w-8 rounded-full glass flex items-center justify-center transition hover:scale-110" style="color:${inWishlist(p.id) ? 'var(--err)' : 'var(--brand)'}">
+        ${inWishlist(p.id) ? I.heartFill : I.heart}
+      </button>
+      ${!p.stock ? `<span class="absolute left-3 bottom-3 rounded-full px-2.5 py-1 text-[10px] font-semibold text-white" style="background:var(--err)">Sold out</span>` : ''}
       <div class="quick-add absolute inset-x-3 bottom-3">
         <button onclick="addToCart('${p.id}')" ${!p.stock?'disabled':''} class="btn ${inCart?'btn-ghost bg-white':'btn-primary'} w-full py-2.5 text-xs">
           <span class="btn-label">${!p.stock ? 'Unavailable' : inCart ? `In cart (${inCart.qty}) · add more` : 'Add to Cart'}</span>
@@ -1463,6 +1507,84 @@ function CartDrawer() {
   </div>`;
 }
 
+/* ---------- WISHLIST DRAWER ---------- */
+function WishlistDrawer() {
+  const items = S.wishlist.map(getProduct).filter(Boolean);
+  return `
+  <div class="fixed inset-0 z-[100] ${S.wishlistOpen ? '' : 'pointer-events-none'}">
+    <div onclick="openWishlist(false)" class="backdrop absolute inset-0 bg-black/40 ${S.wishlistOpen ? 'opacity-100' : 'opacity-0'}"></div>
+    <aside class="drawer absolute right-0 top-0 h-full w-full max-w-md flex flex-col glass depth-3 ${S.wishlistOpen ? 'translate-x-0' : 'translate-x-full'}">
+      <div class="flex items-center justify-between p-5" style="border-bottom:1px solid var(--line)">
+        <h3 class="font-display text-xl font-bold" style="color:var(--brand)">Wishlist <span class="text-sm font-body font-normal" style="color:var(--sand)">(${items.length})</span></h3>
+        <button onclick="openWishlist(false)" class="p-2 rounded-full hover:bg-white/60" style="color:var(--ink)">${I.x}</button>
+      </div>
+      <div class="flex-1 overflow-y-auto p-5 space-y-4">
+        ${items.length ? items.map(p => `
+          <div class="flex gap-3 rounded-xl p-3 depth-1" style="background:#fff">
+            <div class="h-20 w-20 rounded-lg overflow-hidden shrink-0">${p.img ? `<img src="${p.img}" alt="${p.name}" class="w-full h-full object-cover photo-crop">` : motif(p.category,'wl'+p.id)}</div>
+            <div class="flex-1 min-w-0">
+              <p class="font-display text-sm font-semibold truncate" style="color:var(--ink)">${p.name}</p>
+              <p class="text-xs" style="color:var(--sand)">${p.category}</p>
+              <p class="text-sm font-semibold mt-0.5" style="color:var(--brand)">${money(p.price)}</p>
+              <div class="flex items-center gap-2 mt-2">
+                <button onclick="addToCart('${p.id}')" ${!p.stock?'disabled':''} class="btn ${p.stock?'btn-primary':'btn-ghost'} px-3 py-1.5 text-xs"><span class="btn-label">${p.stock ? 'Add to cart' : 'Sold out'}</span></button>
+                <button onclick="toggleWishlist('${p.id}')" class="ml-auto p-1.5 rounded-lg hover:bg-black/5" style="color:var(--err)">${I.trash}</button>
+              </div>
+            </div>
+          </div>`).join('') : `
+          <div class="text-center py-20" style="color:var(--sand)">
+            <div class="mx-auto h-14 w-14 opacity-50">${I.heart}</div>
+            <p class="mt-3 font-display text-lg" style="color:var(--brand)">No saved pieces yet</p>
+            <p class="mt-1 text-sm">Tap the ♡ on any product to save it here.</p>
+            <button onclick="openWishlist(false);goto('shop')" class="btn btn-ghost mt-4 px-5 py-2.5 text-sm"><span class="btn-label">Browse the shop</span></button>
+          </div>`}
+      </div>
+      ${items.length ? `
+      <div class="p-5 space-y-2" style="border-top:1px solid var(--line);background:var(--canvas)">
+        <button onclick="wishlistToCart();openWishlist(false);openCart(true)" class="btn btn-primary w-full py-3 text-sm"><span class="btn-label">Move all to cart</span></button>
+        <button onclick="S.wishlist=[];save();render()" class="w-full text-xs" style="color:var(--sand)">Clear wishlist</button>
+      </div>` : ''}
+    </aside>
+  </div>`;
+}
+
+/* ---------- SEARCH OVERLAY ---------- */
+function SearchResultsInner() {
+  const q = S.searchQuery.trim();
+  if (!q) return `<p class="text-sm text-center py-10" style="color:var(--sand)">Start typing to search our pieces…</p>`;
+  const res = searchResults();
+  if (!res.length) return `<p class="text-sm text-center py-10" style="color:var(--sand)">No matches for “${q}”. Try “earrings”, “sets”, “anklet”…</p>`;
+  return `<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+    ${res.map(p => `
+      <button onclick="openSearch(false);setCategory('${p.category}')" class="text-left rounded-xl overflow-hidden depth-1 hover:depth-2 transition" style="background:#fff">
+        <div class="aspect-square overflow-hidden">${p.img ? `<img src="${p.img}" alt="${p.name}" class="w-full h-full object-cover photo-crop">` : motif(p.category,'sr'+p.id)}</div>
+        <div class="p-2.5">
+          <p class="text-[13px] font-semibold leading-tight truncate" style="color:var(--ink)">${p.name}</p>
+          <p class="text-xs mt-0.5" style="color:var(--brand)">${money(p.price)}</p>
+        </div>
+      </button>`).join('')}
+  </div>`;
+}
+function SearchPanel() {
+  return `
+  <div class="fixed inset-0 z-[110] ${S.searchOpen ? '' : 'pointer-events-none'}">
+    <div onclick="openSearch(false)" class="backdrop absolute inset-0 bg-black/50 ${S.searchOpen ? 'opacity-100' : 'opacity-0'}"></div>
+    <div class="absolute inset-x-0 top-0 glass depth-3 transition-transform duration-500 ease-silk ${S.searchOpen ? 'translate-y-0' : '-translate-y-full'}" style="max-height:85vh">
+      <div class="max-w-3xl mx-auto p-5">
+        <div class="flex items-center gap-3">
+          <span style="color:var(--sand)">${I.search}</span>
+          <input id="search-input" value="${S.searchQuery}" oninput="setSearch(this.value)" onkeydown="if(event.key==='Escape')openSearch(false)" placeholder="Search jewelry…" class="flex-1 bg-transparent outline-none text-lg" style="color:var(--ink)">
+          <button onclick="openSearch(false)" class="p-2 rounded-full hover:bg-white/60" style="color:var(--ink)">${I.x}</button>
+        </div>
+        <div class="mt-2 flex flex-wrap gap-2">
+          ${['Earrings','Necklaces','Sets','Anklets','Keychains'].map(c => `<button onclick="openSearch(false);setCategory('${c}')" class="text-xs rounded-full px-3 py-1" style="background:var(--card);color:var(--ink)">${c}</button>`).join('')}
+        </div>
+        <div id="search-results" class="mt-5 overflow-y-auto" style="max-height:60vh">${SearchResultsInner()}</div>
+      </div>
+    </div>
+  </div>`;
+}
+
 /* Owner reaches the panel at  beadedfinery.com/admin  (see BOOT). No visible control on the storefront. */
 
 /* -------------------------------------------------------------------- */
@@ -1719,6 +1841,9 @@ const wantsAdmin = /^\/admin\/?$/i.test(location.pathname)
 S.feedbackSent = false;
 S.showLogin = false;
 S.loginError = '';
+S.cartOpen = S.wishlistOpen = S.searchOpen = false;
+S.searchQuery = '';
+if (!Array.isArray(S.wishlist)) S.wishlist = [];
 
 render();
 if (wantsAdmin) enterAdmin({ fromUrl: true });
