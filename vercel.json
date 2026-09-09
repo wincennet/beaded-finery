@@ -3,7 +3,8 @@
   "cleanUrls": true,
   "trailingSlash": false,
   "rewrites": [
-    { "source": "/admin", "destination": "/index.html" }
+    { "source": "/admin", "destination": "/" },
+    { "source": "/admin/", "destination": "/" }
   ],
   "headers": [
     {

@@ -1493,8 +1493,10 @@ function sectionHead(title, sub, left = false) {
 // Admin view always requires re-auth per browser session.
 if (S.view === 'admin' && !adminKey()) S.view = 'store';
 
-// beadedfinery.com/admin  → owner login
-const wantsAdmin = /^\/admin\/?$/i.test(location.pathname) || location.hash.toLowerCase() === '#admin';
+// Owner login via  /admin  ,  ?admin  or  #admin
+const wantsAdmin = /^\/admin\/?$/i.test(location.pathname)
+  || /(^|[?&])admin($|[=&])/i.test(location.search)
+  || location.hash.toLowerCase() === '#admin';
 
 render();
 if (wantsAdmin) enterAdmin({ fromUrl: true });
