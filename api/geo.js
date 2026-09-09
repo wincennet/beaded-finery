@@ -53,7 +53,11 @@ async function getRates() {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Cache-Control', 'public, max-age=1800');
+  // Per-visitor — must never be cached by the CDN/browser (FX rates are cached server-side in Redis).
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('CDN-Cache-Control', 'no-store');
+  res.setHeader('Vercel-CDN-Cache-Control', 'no-store');
+  res.setHeader('Vary', 'x-vercel-ip-country');
 
   const cc = String(req.headers['x-vercel-ip-country'] || '').toUpperCase() || null;
   const currency = (cc && COUNTRY_CUR[cc]) || 'PKR';

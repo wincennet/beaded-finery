@@ -776,9 +776,10 @@ function applyCurrency(cur) {
 }
 async function loadGeo() {
   try {
-    const g = await fetch('/api/geo').then(r => r.json());
+    const g = await fetch('/api/geo', { cache: 'no-store' }).then(r => r.json());
     if (g && g.rates) S.fxRates = g.rates;
-    if (g && g.country) S.fx.country = g.country;
+    S.fx.country = (g && g.country) || null;
+    // detected currency always wins unless the visitor picked one from the dropdown
     applyCurrency(S.userCurrency || (g && g.currency) || 'PKR');
     save(); render();
   } catch (e) {}
