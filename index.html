@@ -43,10 +43,14 @@
   "url": "https://beadedfinery.com/",
   "image": "/images/instagram/ig8.jpg",
   "email": "beadedfinerybymanahil@gmail.com",
+  "telephone": "+92-324-4896469",
   "priceRange": "Rs. 500 – Rs. 6000",
   "areaServed": ["Pakistan", "Worldwide"],
   "address": { "@type": "PostalAddress", "addressCountry": "PK" },
-  "sameAs": ["https://www.instagram.com/beadedfineryby_manahil/"],
+  "sameAs": [
+    "https://www.instagram.com/beadedfineryby_manahil/",
+    "https://www.tiktok.com/@beadedfinery"
+  ],
   "paymentAccepted": ["Easypaisa", "JazzCash", "Bank Transfer"],
   "makesOffer": {
     "@type": "OfferCatalog",
@@ -656,7 +660,12 @@ const I = {
   chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-5 h-5"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg>',
   box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-5 h-5"><path d="M3 8l9-5 9 5-9 5-9-5Zm0 0v8l9 5 9-5V8"/></svg>',
   insta: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-5 h-5"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17" cy="7" r="1" fill="currentColor"/></svg>',
+tiktok: '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M16 3c.3 2.2 1.6 3.9 3.9 4.2v2.6c-1.4.1-2.7-.3-3.9-1v6.6c0 3.6-2.6 5.9-5.8 5.9C7 27.3 4.5 25 4.5 21.5c0-3.3 2.6-5.7 6-5.5v2.7c-.5-.1-1-.2-1.5-.1-1.4.2-2.4 1.3-2.3 2.8.1 1.4 1.3 2.5 2.7 2.4 1.5-.1 2.4-1.2 2.4-2.8V3H16Z"/></svg>',
+whatsapp: '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2Zm5.8 14.2c-.2.6-1.2 1.2-1.7 1.2-.4 0-1 .1-3.2-.9-2.7-1.2-4.4-4-4.5-4.2-.1-.2-1-1.4-1-2.6s.6-1.8.9-2.1c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 2c.1.2.1.4 0 .5l-.4.5c-.1.2-.3.3-.1.6.1.3.7 1.1 1.4 1.7 1 .8 1.7 1.1 2 1.2.2.1.4.1.5-.1l.7-.8c.2-.2.3-.2.6-.1l1.9.9c.3.1.5.2.6.3.1.2.1.7-.1 1.3Z"/></svg>',
 };
+const PHONE = '03244896469';
+const WA_URL = 'https://wa.me/923244896469';
+const TIKTOK_URL = 'https://www.tiktok.com/@beadedfinery';
 
 /* ==================================================================== */
 /*  RENDER                                                               */
@@ -972,7 +981,7 @@ function Testimonials() {
 function InstagramFeed() {
   return `
   <section class="max-w-7xl mx-auto px-4 sm:px-6 py-16 sm:py-24">
-    ${sectionHead('Follow Us on Instagram', 'For daily updates, new arrivals and behind the scenes.')}
+    ${sectionHead('Follow Us', 'Daily updates, new arrivals and behind the scenes — on Instagram, TikTok &amp; WhatsApp.')}
     <div class="grid grid-cols-4 sm:grid-cols-8 gap-2 sm:gap-3 scene">
       ${IG_POSTS.map((post,i) => `
         <a href="${post.href}" target="_blank" rel="noopener noreferrer"
@@ -981,9 +990,15 @@ function InstagramFeed() {
           <div class="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition text-white opacity-0 group-hover:opacity-100">${I.insta}</div>
         </a>`).join('')}
     </div>
-    <div class="text-center mt-8">
+    <div class="text-center mt-8 flex flex-wrap justify-center gap-3">
       <a href="${IG_URL}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost px-6 py-3 text-sm inline-flex">
-        ${I.insta}<span class="btn-label">@${IG_HANDLE}</span>
+        ${I.insta}<span class="btn-label">Instagram</span>
+      </a>
+      <a href="${TIKTOK_URL}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost px-6 py-3 text-sm inline-flex">
+        ${I.tiktok}<span class="btn-label">TikTok</span>
+      </a>
+      <a href="${WA_URL}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost px-6 py-3 text-sm inline-flex">
+        ${I.whatsapp}<span class="btn-label">WhatsApp</span>
       </a>
     </div>
   </section>`;
@@ -996,7 +1011,11 @@ function Footer() {
       <div class="md:col-span-1">
         ${Wordmark('wm-on-brand')}
         <p class="mt-4 text-white/80 max-w-xs text-sm leading-relaxed">Little details make a big difference. Handmade beaded jewelry, thoughtfully crafted in Pakistan and shipped worldwide.</p>
-        <a href="${IG_URL}" target="_blank" rel="noopener noreferrer" class="mt-4 inline-flex items-center gap-2 text-sm text-white/85 hover:text-white transition">${I.insta} @${IG_HANDLE}</a>
+        <div class="mt-4 flex items-center gap-3">
+          <a href="${IG_URL}" target="_blank" rel="noopener noreferrer" title="Instagram" class="h-9 w-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition">${I.insta}</a>
+          <a href="${TIKTOK_URL}" target="_blank" rel="noopener noreferrer" title="TikTok" class="h-9 w-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition">${I.tiktok}</a>
+          <a href="${WA_URL}" target="_blank" rel="noopener noreferrer" title="WhatsApp" class="h-9 w-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition">${I.whatsapp}</a>
+        </div>
       </div>
       <div>
         <p class="text-xs uppercase tracking-widest text-white/60 mb-4">Quick Links</p>
@@ -1004,7 +1023,8 @@ function Footer() {
           <li><button onclick="goto('home')" class="hover:text-white transition">Home</button></li>
           <li><button onclick="goto('shop')" class="hover:text-white transition">Shop</button></li>
           <li><button onclick="document.getElementById('about')?.scrollIntoView({behavior:'smooth'})" class="hover:text-white transition">About</button></li>
-          <li><a href="mailto:beadedfinerybymanahil@gmail.com" class="hover:text-white transition">Contact</a></li>
+          <li><a href="${WA_URL}" target="_blank" rel="noopener noreferrer" class="hover:text-white transition">WhatsApp ${PHONE}</a></li>
+          <li><a href="mailto:beadedfinerybymanahil@gmail.com" class="hover:text-white transition">beadedfinerybymanahil@gmail.com</a></li>
         </ul>
       </div>
       <div>
@@ -1213,6 +1233,8 @@ function CheckoutStep3() {
         <span class="font-medium break-all" style="color:var(--ink)">beadedfinerybymanahil@gmail.com</span>
         <button onclick="navigator.clipboard?.writeText('beadedfinerybymanahil@gmail.com');toast('Email copied','ok')" class="btn btn-ghost px-3 py-1.5 text-xs shrink-0"><span class="btn-label">Copy</span></button>
       </div>
+      <p class="text-sm mt-3">…or message us on WhatsApp:</p>
+      <a href="${WA_URL}" target="_blank" rel="noopener noreferrer" class="mt-2 flex items-center justify-center gap-2 rounded-lg bg-white p-3 text-sm font-medium" style="border:1px solid var(--line);color:var(--brand)">${I.whatsapp} ${PHONE}</a>
       ${o ? `<div class="mt-4 text-sm space-y-1">
         <div class="flex justify-between"><span>Method chosen</span><strong>${o.method}</strong></div>
         <div class="flex justify-between"><span>Amount to send</span><strong style="color:var(--brand)">${money(o.total)}</strong></div>
