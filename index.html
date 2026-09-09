@@ -309,28 +309,46 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 
 /* ---------- Money: money() = owner-facing PKR · price() = customer-facing, converted ---------- */
 const money = n => 'Rs. ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
-const CUR_SYM = { PKR: 'Rs. ', USD: '$', GBP: '£', EUR: '€', AED: 'AED ', SAR: 'SR ', CAD: 'C$', AUD: 'A$', INR: '₹' };
-const CURRENCIES = Object.keys(CUR_SYM);
-// countries offered in the checkout selector (code -> name). Owner ships wherever they set a rate.
-const COUNTRIES = {
-  PK: 'Pakistan', US: 'United States', GB: 'United Kingdom', CA: 'Canada', AU: 'Australia',
-  AE: 'UAE', SA: 'Saudi Arabia', QA: 'Qatar', KW: 'Kuwait', BH: 'Bahrain', OM: 'Oman',
-  DE: 'Germany', FR: 'France', IT: 'Italy', ES: 'Spain', NL: 'Netherlands', SE: 'Sweden',
-  NO: 'Norway', IE: 'Ireland', BE: 'Belgium', CH: 'Switzerland', MY: 'Malaysia', SG: 'Singapore',
-  BD: 'Bangladesh', LK: 'Sri Lanka', TR: 'Turkey', ZA: 'South Africa', NZ: 'New Zealand',
-  IN: 'India', XX: 'Other country',
-};
-const countryName = cc => COUNTRIES[String(cc || '').toUpperCase()] || cc || 'your country';
+// currencies offered in the header switcher (formatting/symbols handled by Intl)
+const CURRENCIES = ['PKR','USD','EUR','GBP','INR','AED','SAR','QAR','KWD','BHD','OMR','JOD','ILS','TRY',
+  'CAD','AUD','NZD','CHF','JPY','CNY','HKD','KRW','SGD','MYR','THB','IDR','PHP',
+  'SEK','NOK','DKK','PLN','CZK','HUF','RON','RUB','ZAR','NGN','KES','EGP','MAD',
+  'BRL','MXN','ARS','CLP','COP','BDT','LKR','NPR'];
+const CUR_SYM = { PKR: 'Rs. ', USD: '$', EUR: '€', GBP: '£', INR: '₹', AED: 'AED ', SAR: 'SR ', CAD: 'C$', AUD: 'A$' };
 function price(pkr) {
   const cur = S.fx.currency, rate = S.fx.rate || 1;
   if (cur === 'PKR' || rate === 1) return money(pkr);
-  let v = (Number(pkr) || 0) * rate;
-  v = cur === 'INR' ? Math.round(v)
-    : v < 50 ? Math.round(v * 100) / 100
-    : v < 500 ? Math.round(v * 2) / 2
-    : Math.round(v);
-  return (CUR_SYM[cur] || '') + v.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  const v = (Number(pkr) || 0) * rate;
+  try {
+    return new Intl.NumberFormat('en', {
+      style: 'currency', currency: cur,
+      minimumFractionDigits: 0, maximumFractionDigits: v < 500 ? 2 : 0,
+    }).format(v);
+  } catch (e) {
+    return ((S.fx.symbols && S.fx.symbols[cur]) || CUR_SYM[cur] || cur + ' ') + Math.round(v).toLocaleString('en-US');
+  }
 }
+
+/* countries offered in the checkout selector (ISO-2 -> name). Owner ships anywhere a rate is set. */
+const COUNTRIES = {
+  PK:'Pakistan', US:'United States', GB:'United Kingdom', CA:'Canada', AU:'Australia', NZ:'New Zealand', IE:'Ireland',
+  AE:'United Arab Emirates', SA:'Saudi Arabia', QA:'Qatar', KW:'Kuwait', BH:'Bahrain', OM:'Oman', JO:'Jordan',
+  LB:'Lebanon', IL:'Israel', TR:'Türkiye', EG:'Egypt', MA:'Morocco', TN:'Tunisia', DZ:'Algeria',
+  DE:'Germany', FR:'France', IT:'Italy', ES:'Spain', PT:'Portugal', NL:'Netherlands', BE:'Belgium', LU:'Luxembourg',
+  AT:'Austria', CH:'Switzerland', SE:'Sweden', NO:'Norway', DK:'Denmark', FI:'Finland', IS:'Iceland',
+  PL:'Poland', CZ:'Czechia', SK:'Slovakia', HU:'Hungary', RO:'Romania', BG:'Bulgaria', GR:'Greece', HR:'Croatia',
+  RS:'Serbia', SI:'Slovenia', UA:'Ukraine', RU:'Russia', CY:'Cyprus', MT:'Malta', EE:'Estonia', LV:'Latvia', LT:'Lithuania',
+  IN:'India', BD:'Bangladesh', LK:'Sri Lanka', NP:'Nepal', BT:'Bhutan', MV:'Maldives',
+  CN:'China', HK:'Hong Kong', TW:'Taiwan', JP:'Japan', KR:'South Korea', SG:'Singapore', MY:'Malaysia',
+  TH:'Thailand', ID:'Indonesia', PH:'Philippines', VN:'Vietnam', KH:'Cambodia', MM:'Myanmar', BN:'Brunei',
+  ZA:'South Africa', NG:'Nigeria', KE:'Kenya', GH:'Ghana', TZ:'Tanzania', UG:'Uganda', ET:'Ethiopia', RW:'Rwanda',
+  MU:'Mauritius', ZM:'Zambia', ZW:'Zimbabwe', BW:'Botswana', NA:'Namibia', SN:'Senegal',
+  BR:'Brazil', MX:'Mexico', AR:'Argentina', CL:'Chile', CO:'Colombia', PE:'Peru', UY:'Uruguay', EC:'Ecuador',
+  CR:'Costa Rica', PA:'Panama', DO:'Dominican Republic', GT:'Guatemala', JM:'Jamaica', TT:'Trinidad & Tobago',
+  AF:'Afghanistan', IQ:'Iraq', IR:'Iran', KZ:'Kazakhstan', UZ:'Uzbekistan', AZ:'Azerbaijan', GE:'Georgia', AM:'Armenia',
+  XX:'Other country',
+};
+const countryName = cc => COUNTRIES[String(cc || '').toUpperCase()] || cc || 'your country';
 
 /* ---------- Shipping (config comes from /api/settings; all values PKR) ---------- */
 const SHIP_DEFAULT = {
@@ -469,7 +487,7 @@ const DEFAULT_STATE = {
   loginError: '',
   editImg: '',
   catalogPublished: false,
-  fx: { currency: 'PKR', symbol: 'Rs. ', rate: 1, country: null },
+  fx: { currency: 'PKR', symbol: 'Rs. ', rate: 1, country: null, symbols: {} },
   fxRates: { PKR: 1 },
   userCurrency: '',          // manual override (also mirrored to localStorage)
   ship: SHIP_DEFAULT,
@@ -770,14 +788,17 @@ function deleteReview(id) {
 
 /* ---- currency: detect country, fetch rates, let the visitor switch ---- */
 function applyCurrency(cur) {
-  cur = CURRENCIES.includes(cur) ? cur : 'PKR';
+  cur = String(cur || 'PKR').toUpperCase();
+  // accept any currency the FX feed knows, not just the curated dropdown list
+  if (cur !== 'PKR' && !(S.fxRates && S.fxRates[cur])) cur = 'PKR';
   const rate = cur === 'PKR' ? 1 : (S.fxRates[cur] || S.fx.rate || 1);
-  S.fx = { ...S.fx, currency: cur, symbol: CUR_SYM[cur] || '', rate };
+  S.fx = { ...S.fx, currency: cur, symbol: (S.fx.symbols && S.fx.symbols[cur]) || CUR_SYM[cur] || cur + ' ', rate };
 }
 async function loadGeo() {
   try {
     const g = await fetch('/api/geo', { cache: 'no-store' }).then(r => r.json());
     if (g && g.rates) S.fxRates = g.rates;
+    if (g && g.symbols) S.fx.symbols = g.symbols;
     S.fx.country = (g && g.country) || null;
     // detected currency always wins unless the visitor picked one from the dropdown
     applyCurrency(S.userCurrency || (g && g.currency) || 'PKR');
