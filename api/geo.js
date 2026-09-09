@@ -11,7 +11,7 @@
  */
 import { Redis } from '@upstash/redis';
 
-const RATES_KEY = 'beadedfinery:fxrates';
+const RATES_KEY = 'beadedfinery:fxrates:v2';   // bump to discard the old filtered cache
 
 let redis = null;
 try {
