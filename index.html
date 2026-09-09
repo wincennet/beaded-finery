@@ -354,10 +354,23 @@ const COUNTRIES = {
 const countryName = cc => COUNTRIES[String(cc || '').toUpperCase()] || cc || 'your country';
 
 /* ---------- Shipping (config comes from /api/settings; all values PKR) ---------- */
+/* suggested courier rates from Pakistan for a small (~250 g) jewellery parcel, grouped by region */
+const INTL_ZONE_GROUPS = {
+  'Gulf & Middle East': { AE: 1500, SA: 1500, QA: 1600, KW: 1600, BH: 1600, OM: 1600, JO: 1800, LB: 2000, IL: 2200, TR: 2200, IQ: 2000, IR: 1800, AF: 1500 },
+  'South Asia': { BD: 1500, LK: 1500, NP: 1500, BT: 1600, MV: 1800 },
+  'East & Southeast Asia': { CN: 2800, HK: 2800, TW: 2800, JP: 3000, KR: 3000, SG: 2800, MY: 2800, TH: 2800, ID: 3000, PH: 3000, VN: 3000, KH: 3200, MM: 3000, BN: 3000 },
+  'UK & Europe': { GB: 3200, IE: 3200, DE: 3200, FR: 3200, IT: 3200, ES: 3200, PT: 3400, NL: 3200, BE: 3200, LU: 3300, AT: 3300, CH: 3400, SE: 3500, NO: 3600, DK: 3500, FI: 3500, IS: 3800, PL: 3300, CZ: 3300, SK: 3300, HU: 3300, RO: 3400, BG: 3400, GR: 3400, HR: 3400, RS: 3400, SI: 3300, UA: 3400, RU: 3600, CY: 3400, MT: 3400, EE: 3400, LV: 3400, LT: 3400 },
+  'North America': { US: 3200, CA: 3300 },
+  'Oceania': { AU: 3500, NZ: 3700 },
+  'Africa': { EG: 3000, MA: 3200, TN: 3200, DZ: 3200, ZA: 4000, NG: 4200, KE: 4000, GH: 4200, TZ: 4000, UG: 4200, ET: 4200, RW: 4200, MU: 3600, ZM: 4200, ZW: 4200, BW: 4000, NA: 4000, SN: 4200 },
+  'Central Asia & Caucasus': { KZ: 2600, UZ: 2600, AZ: 2600, GE: 2600, AM: 2600 },
+  'Latin America & Caribbean': { BR: 4500, MX: 4300, AR: 4500, CL: 4500, CO: 4300, PE: 4500, UY: 4500, EC: 4300, CR: 4300, PA: 4300, DO: 4300, GT: 4300, JM: 4300, TT: 4300 },
+};
+const INTL_ZONES = Object.assign({}, ...Object.values(INTL_ZONE_GROUPS));
 const SHIP_DEFAULT = {
   pk: { rate: 300, freeOver: 3000 },
   blocked: ['IN'],
-  intl: { default: 2500, zones: { US: 3000, GB: 3000, CA: 3200, AU: 3200, DE: 3000, FR: 3000, AE: 1500, SA: 1500 } },
+  intl: { default: 2500, zones: { ...INTL_ZONES } },
 };
 const shipCountry = () => String(S.checkoutCountry || S.fx.country || 'PK').toUpperCase();
 const shipBlocked = cc => (S.ship.blocked || []).includes(cc || shipCountry());
@@ -861,6 +874,15 @@ function addZone() {
   save(); render();
 }
 function removeZone(cc) { delete S.ship.intl.zones[cc]; save(); render(); }
+function loadSuggestedZones() {
+  S.ship.intl.zones = S.ship.intl.zones || {};
+  let added = 0;
+  for (const [cc, r] of Object.entries(INTL_ZONES)) {
+    if (S.ship.intl.zones[cc] == null) { S.ship.intl.zones[cc] = r; added++; }
+  }
+  save(); render();
+  toast(added ? `Added ${added} countries — review the rates, then Save` : 'All suggested countries are already listed', added ? 'ok' : 'err');
+}
 async function saveSettings(btn) {
   btn.classList.add('loading');
   try {
@@ -2128,7 +2150,25 @@ function AdminFeedback() {
 }
 
 function AdminShipping() {
-  const zones = Object.entries(S.ship.intl.zones || {}).sort();
+  const zoneObj = S.ship.intl.zones || {};
+  const byName = (a, b) => countryName(a).localeCompare(countryName(b));
+  const seen = new Set();
+  const groups = Object.entries(INTL_ZONE_GROUPS).map(([name, tbl]) => {
+    const ccs = Object.keys(tbl).filter(cc => zoneObj[cc] != null).sort(byName);
+    ccs.forEach(cc => seen.add(cc));
+    return [name, ccs];
+  });
+  const extra = Object.keys(zoneObj).filter(cc => !seen.has(cc)).sort(byName);
+  if (extra.length) groups.push(['Other', extra]);
+  const totalZones = Object.keys(zoneObj).length;
+  const missing = Object.keys(INTL_ZONES).filter(cc => zoneObj[cc] == null).length;
+  const zoneRow = (cc) => `
+    <div class="flex items-center gap-2">
+      <span class="text-sm font-mono w-8" style="color:var(--brand)">${cc}</span>
+      <span class="text-sm flex-1 truncate" style="color:var(--ink)">${countryName(cc)}</span>
+      <input type="number" min="0" class="field !py-1.5 w-28 text-sm" value="${zoneObj[cc]}" oninput="S.ship.intl.zones['${cc}']=Math.max(0,Math.round(+this.value||0));save()">
+      <button onclick="removeZone('${cc}')" class="p-1.5 rounded-lg hover:bg-black/5" style="color:var(--err)">${I.trash}</button>
+    </div>`;
   const fld = (label, path, val) => `
     <label class="block">
       <span class="text-xs font-medium mb-1 block" style="color:var(--ink)">${label}</span>
@@ -2156,17 +2196,18 @@ function AdminShipping() {
     <div class="rounded-2xl p-5 depth-1" style="background:#fff;border:1px solid var(--line)">
       <h4 class="font-display font-bold mb-3" style="color:var(--brand)">International delivery</h4>
       ${fld('Default charge for any other country (Rs.)', 'intl.default', S.ship.intl.default)}
-      <p class="text-xs mt-4 mb-2 font-medium" style="color:var(--ink)">Per-country overrides</p>
-      <div class="space-y-2">
-        ${zones.length ? zones.map(([cc, rate]) => `
-          <div class="flex items-center gap-2">
-            <span class="text-sm font-mono w-8" style="color:var(--brand)">${cc}</span>
-            <span class="text-sm flex-1 truncate" style="color:var(--ink)">${countryName(cc)}</span>
-            <input type="number" min="0" class="field !py-1.5 w-28 text-sm" value="${rate}" oninput="S.ship.intl.zones['${cc}']=Math.max(0,Math.round(+this.value||0));save()">
-            <button onclick="removeZone('${cc}')" class="p-1.5 rounded-lg hover:bg-black/5" style="color:var(--err)">${I.trash}</button>
-          </div>`).join('') : `<p class="text-xs" style="color:var(--sand)">No overrides — everywhere uses the default rate.</p>`}
+      <div class="flex flex-wrap items-center justify-between gap-2 mt-4 mb-1">
+        <p class="text-xs font-medium" style="color:var(--ink)">Per-country rates <span style="color:var(--sand)">(${totalZones} listed)</span></p>
+        ${missing ? `<button onclick="loadSuggestedZones()" class="btn btn-ghost px-3 py-1.5 text-xs"><span class="btn-label">➕ Add suggested rates for ${missing} more countries</span></button>` : ''}
       </div>
-      <div class="flex items-end gap-2 mt-3">
+      <div class="space-y-3">
+        ${totalZones ? groups.filter(([, ccs]) => ccs.length).map(([name, ccs]) => `
+          <div>
+            <p class="text-[11px] uppercase tracking-wide mb-1.5" style="color:var(--sand)">${name}</p>
+            <div class="space-y-2">${ccs.map(zoneRow).join('')}</div>
+          </div>`).join('') : `<p class="text-xs" style="color:var(--sand)">No per-country rates — everywhere uses the default above.</p>`}
+      </div>
+      <div class="flex items-end gap-2 mt-4">
         <label class="block"><span class="text-[11px] mb-1 block" style="color:var(--sand)">Country code</span>
           <input id="zone-cc" class="field !py-1.5 w-24 text-sm" placeholder="AE" maxlength="2"></label>
         <label class="block"><span class="text-[11px] mb-1 block" style="color:var(--sand)">Rate (Rs.)</span>
