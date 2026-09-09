@@ -371,7 +371,7 @@ const SHIP_DEFAULT = {
   pk: { rate: 300, freeOver: 3000 },
   blocked: ['IN'],
   intl: { default: 2500, zones: { ...INTL_ZONES } },
-  home: { whyImg: '' },
+  home: { whyImg: '', heroImg: '' },
 };
 const shipCountry = () => String(S.checkoutCountry || S.fx.country || 'PK').toUpperCase();
 const shipBlocked = cc => (S.ship.blocked || []).includes(cc || shipCountry());
@@ -851,7 +851,7 @@ async function loadSettings() {
     const res = await fetch('/api/settings');
     if (!res.ok) return;
     const s = await res.json();
-    if (s && s.pk && s.intl) { s.home = s.home || { whyImg: '' }; S.ship = s; save(); render(); }
+    if (s && s.pk && s.intl) { s.home = s.home || {}; s.home.whyImg = s.home.whyImg || ''; s.home.heroImg = s.home.heroImg || ''; S.ship = s; save(); render(); }
   } catch (e) {}
 }
 function bindShip(path, v) {
@@ -1094,7 +1094,7 @@ function DemoCleanupModal() {
 }
 
 /* ---- image upload: shrink the photo in the browser before storing it ---- */
-function compressImage(file, maxDim = 900, quality = 0.72) {
+function compressImage(file, maxDim = 900, quality = 0.72, maxBytes = 140000) {
   return new Promise((resolve, reject) => {
     if (!file || !/^image\//.test(file.type)) return reject(new Error('Not an image'));
     const reader = new FileReader();
@@ -1112,7 +1112,7 @@ function compressImage(file, maxDim = 900, quality = 0.72) {
         ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h);
         ctx.drawImage(img, 0, 0, w, h);
         let q = quality, out = cv.toDataURL('image/jpeg', q);
-        while (out.length > 140000 && q > 0.4) { q -= 0.08; out = cv.toDataURL('image/jpeg', q); }
+        while (out.length > maxBytes && q > 0.4) { q -= 0.08; out = cv.toDataURL('image/jpeg', q); }
         resolve(out);
       };
       img.src = e.target.result;
@@ -1412,6 +1412,24 @@ function Home() {
 function Hero() {
   const picks = CATEGORIES.map(c => S.products.find(p => p.category === c && p.stock) || S.products.find(p => p.category === c)).filter(Boolean);
   const strip = [...picks, ...picks];
+  const heroImg = (S.ship && S.ship.home && S.ship.home.heroImg) || '';
+  const showcase = heroImg
+    ? `<div class="reveal scene mt-10 sm:mt-14 max-w-6xl mx-auto px-4 sm:px-6">
+         <div class="tilt rounded-[26px] overflow-hidden depth-3 aspect-[16/10] sm:aspect-[21/9]" style="background:var(--card)">
+           <img src="${heroImg}" alt="Handmade beaded jewelry by Beaded Finery" class="w-full h-full object-cover photo-crop">
+         </div>
+       </div>`
+    : `<div id="filmstrip" class="filmstrip mt-10 sm:mt-14 py-6 scene">
+        <div class="filmstrip-bow">
+          <div class="filmstrip-track">
+            ${strip.map((p,i) => `
+              <figure class="film-panel ${p.img ? 'has-photo' : ''}" data-cat="${p.category}">
+                ${p.img ? `<img src="${p.img}" alt="${p.name}" loading="lazy" class="w-full h-full object-cover photo-crop">` : motif(p.category, 'fs'+i)}
+                <figcaption class="absolute bottom-3 left-3 z-10 rounded-full px-3 py-1 text-[11px] font-medium text-white" style="background:rgba(58,42,50,.5);backdrop-filter:blur(6px)">${p.category}</figcaption>
+              </figure>`).join('')}
+          </div>
+        </div>
+      </div>`;
   return `
   <section class="relative pt-8 sm:pt-12" style="border-top:1px solid var(--line);border-bottom:1px solid var(--line)">
     <div class="reveal text-center max-w-4xl mx-auto px-5">
@@ -1424,17 +1442,7 @@ function Hero() {
       <p class="font-display italic mt-6 text-lg sm:text-xl md:text-2xl" style="color:var(--brand-hover)">Unique pieces, made with love — every bead hand-set in Pakistan.</p>
     </div>
 
-    <div id="filmstrip" class="filmstrip mt-10 sm:mt-14 py-6 scene">
-      <div class="filmstrip-bow">
-        <div class="filmstrip-track">
-          ${strip.map((p,i) => `
-            <figure class="film-panel ${p.img ? 'has-photo' : ''}" data-cat="${p.category}">
-              ${p.img ? `<img src="${p.img}" alt="${p.name}" loading="lazy" class="w-full h-full object-cover photo-crop">` : motif(p.category, 'fs'+i)}
-              <figcaption class="absolute bottom-3 left-3 z-10 rounded-full px-3 py-1 text-[11px] font-medium text-white" style="background:rgba(58,42,50,.5);backdrop-filter:blur(6px)">${p.category}</figcaption>
-            </figure>`).join('')}
-        </div>
-      </div>
-    </div>
+    ${showcase}
 
     <div class="reveal text-center max-w-xl mx-auto px-5 mt-10 sm:mt-14 pb-12 sm:pb-16">
       <p class="text-sm sm:text-[15px] leading-relaxed" style="color:var(--ink)">
@@ -2409,47 +2417,69 @@ function AdminShipping() {
   </div>`;
 }
 
-async function handleHomeImage(input) {
+async function handleHomeImage(input, key) {
+  key = key || 'whyImg';
   const file = input.files && input.files[0];
   if (!file) return;
-  const status = document.getElementById('home-img-status');
+  const status = document.getElementById(key + '-status');
   if (status) status.textContent = 'Optimising photo…';
   try {
-    const uri = await compressImage(file, 1400, 0.78);
+    const uri = await compressImage(file, 1600, 0.82, 300000);
     S.ship.home = S.ship.home || {};
-    S.ship.home.whyImg = uri;
+    S.ship.home[key] = uri;
     save(); render();
   } catch (e) {
     if (status) status.textContent = "Couldn't read that image — try a JPG or PNG.";
   }
 }
-function clearHomeImage() {
+function clearHomeImage(key) {
   S.ship.home = S.ship.home || {};
-  S.ship.home.whyImg = '';
+  S.ship.home[key || 'whyImg'] = '';
   save(); render();
 }
 
+function homeImageCard(o) {
+  const cur = (S.ship.home && S.ship.home[o.key]) || '';
+  const shown = cur || o.fallback || '';
+  return `
+  <div class="rounded-2xl p-5 depth-1" style="background:#fff;border:1px solid var(--line)">
+    <h4 class="font-display font-bold mb-1" style="color:var(--brand)">${o.title}</h4>
+    <p class="text-xs mb-4" style="color:var(--sand)">${o.desc}</p>
+    <div class="rounded-xl overflow-hidden mb-3 ${o.aspect}" style="border:1px solid var(--line);background:var(--card)">
+      ${shown ? `<img src="${shown}" alt="preview" class="w-full h-full object-cover">` : `<div class="w-full h-full flex items-center justify-center text-xs" style="color:var(--sand)">No image yet</div>`}
+    </div>
+    <p class="text-xs mb-3" style="color:var(--sand)">${cur ? 'Showing your uploaded photo.' : o.emptyNote}</p>
+    <div class="flex flex-wrap gap-2">
+      <label class="btn btn-ghost px-4 py-2.5 text-sm cursor-pointer">
+        <span class="btn-label">📷 ${cur ? 'Replace photo' : 'Upload a photo'}</span>
+        <input type="file" accept="image/*" class="hidden" onchange="handleHomeImage(this,'${o.key}')">
+      </label>
+      ${cur ? `<button type="button" onclick="clearHomeImage('${o.key}')" class="btn btn-ghost px-4 py-2.5 text-sm" style="color:var(--err)"><span class="btn-label">Remove</span></button>` : ''}
+    </div>
+    <p id="${o.key}-status" class="text-xs mt-2" style="color:var(--sand)"></p>
+  </div>`;
+}
+
 function AdminHomepage() {
-  const cur = (S.ship.home && S.ship.home.whyImg) || '';
-  const fallback = (S.products.find(p => p.img && p.bestSeller) || S.products.find(p => p.img) || {}).img || IG(8);
+  const topProduct = (S.products.find(p => p.img && p.bestSeller) || S.products.find(p => p.img) || {}).img || IG(8);
   return `
   <div class="max-w-2xl space-y-5">
-    <div class="rounded-2xl p-5 depth-1" style="background:#fff;border:1px solid var(--line)">
-      <h4 class="font-display font-bold mb-1" style="color:var(--brand)">"Why Choose Us" photo</h4>
-      <p class="text-xs mb-4" style="color:var(--sand)">The large photo next to the "Why Choose Us" list on the home page. Use a bright, in-focus shot of your jewellery — landscape (wider than tall) works best. No custom photo? The site shows your top product photo automatically.</p>
-      <div class="rounded-xl overflow-hidden mb-3 aspect-[4/3]" style="border:1px solid var(--line);background:var(--card)">
-        <img src="${cur || fallback}" alt="preview" class="w-full h-full object-cover">
-      </div>
-      <p class="text-xs mb-3" style="color:var(--sand)">${cur ? 'Showing your uploaded photo.' : 'Showing an automatic photo — upload one below to replace it.'}</p>
-      <div class="flex flex-wrap gap-2">
-        <label class="btn btn-ghost px-4 py-2.5 text-sm cursor-pointer">
-          <span class="btn-label">📷 ${cur ? 'Replace photo' : 'Upload a photo'}</span>
-          <input type="file" accept="image/*" class="hidden" onchange="handleHomeImage(this)">
-        </label>
-        ${cur ? `<button type="button" onclick="clearHomeImage()" class="btn btn-ghost px-4 py-2.5 text-sm" style="color:var(--err)"><span class="btn-label">Remove</span></button>` : ''}
-      </div>
-      <p id="home-img-status" class="text-xs mt-2" style="color:var(--sand)"></p>
-    </div>
+    ${homeImageCard({
+      key: 'heroImg',
+      title: 'Homepage banner (top of the page)',
+      desc: 'A big wide photo at the very top of the home page, under the headline. When set, it replaces the moving row of product tiles. Best: a landscape lifestyle shot with some empty space for the eye to rest. Leave empty to keep the moving product tiles.',
+      aspect: 'aspect-[21/9]',
+      fallback: '',
+      emptyNote: 'Empty — the home page shows the moving product tiles instead.',
+    })}
+    ${homeImageCard({
+      key: 'whyImg',
+      title: '"Why Choose Us" photo',
+      desc: 'The large photo next to the "Why Choose Us" list further down the home page. Landscape (wider than tall) works best. No custom photo? The site shows your top product photo automatically.',
+      aspect: 'aspect-[4/3]',
+      fallback: topProduct,
+      emptyNote: 'Showing an automatic photo — upload one below to replace it.',
+    })}
     <button onclick="saveSettings(this)" class="btn btn-primary px-7 py-3 text-sm"><span class="btn-label">Save to website</span></button>
     <p class="text-xs" style="color:var(--sand)">Changes show on the live site a moment after you save.</p>
   </div>`;
@@ -2534,7 +2564,8 @@ S.cartOpen = S.wishlistOpen = S.searchOpen = false;
 S.searchQuery = '';
 if (!Array.isArray(S.wishlist)) S.wishlist = [];
 if (!S.ship || !S.ship.pk) S.ship = SHIP_DEFAULT;
-if (!S.ship.home) S.ship.home = { whyImg: '' };
+if (!S.ship.home) S.ship.home = { whyImg: '', heroImg: '' };
+if (S.ship.home.heroImg == null) S.ship.home.heroImg = '';
 try {
   const c = localStorage.getItem('bf_currency');
   if (c && CURRENCIES.includes(c)) {
