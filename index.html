@@ -513,6 +513,7 @@ const DEFAULT_STATE = {
   showDemoModal: false,
   demoScan: null,
   demoPick: [],
+  demoUndo: [],
 };
 
 let S = load();
@@ -966,15 +967,15 @@ async function scanDemoData(btn) {
     ]);
     const items = [];
     (orders || []).filter(isDemoOrder).forEach(o => items.push({
-      key: 'order:' + o.id, type: 'order', id: o.id,
+      key: 'order:' + o.id, type: 'order', id: o.id, raw: o,
       label: (o.name || o.id), sub: `${o.id} · ${money(o.total || 0)}${o.date ? ' · ' + o.date : ''}`,
     }));
     (reviews || []).filter(isDemoReview).forEach(f => items.push({
-      key: 'review:' + f.id, type: 'review', id: f.id,
+      key: 'review:' + f.id, type: 'review', id: f.id, raw: f,
       label: (f.name || 'Review'), sub: `"${String(f.message || '').slice(0, 60)}"`,
     }));
     (products || []).filter(isDemoProduct).forEach(p => items.push({
-      key: 'product:' + p.id, type: 'product', id: p.id,
+      key: 'product:' + p.id, type: 'product', id: p.id, raw: p,
       label: p.name, sub: `${p.category || ''} · ${money(p.price || 0)}`,
     }));
     if (!items.length) { toast('No sample data found — nothing to delete', 'ok'); return; }
@@ -1014,11 +1015,35 @@ async function runDemoDelete(btn) {
   }
   const goneOrderIds = picked.filter(p => p.type === 'order').map(p => p.id);
   S.orders = (S.orders || []).filter(o => !goneOrderIds.includes(o.id));
+  S.demoUndo = picked.filter(p => !!p.raw).map(p => ({ type: p.type, raw: p.raw }));
   save();
   S.showDemoModal = false; S.demoScan = null; S.demoPick = [];
-  toast(`Deleted ${done} item${done === 1 ? '' : 's'}` + (failed ? ` · ${failed} failed` : ''), failed ? 'err' : 'ok');
   syncOrders(); loadAllReviews(); loadProducts();
   if (btn) btn.classList.remove('loading');
+  undoToast(`Deleted ${done} item${done === 1 ? '' : 's'}` + (failed ? ` · ${failed} failed` : ''),
+    () => undoDemoDelete());
+}
+async function undoDemoDelete() {
+  const items = S.demoUndo || [];
+  if (!items.length) return;
+  S.demoUndo = []; save();
+  let ok = 0, bad = 0;
+  for (const it of items) {
+    try {
+      let r;
+      if (it.type === 'order') {
+        r = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(it.raw) });
+      } else if (it.type === 'review') {
+        const f = it.raw || {};
+        r = await fetch('/api/feedback', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: f.name, message: f.message, rating: f.rating }) });
+      } else {
+        r = await fetch('/api/products', { method: 'PUT', headers: adminHeaders(), body: JSON.stringify({ product: it.raw }) });
+      }
+      (r && r.ok) ? ok++ : bad++;
+    } catch (e) { bad++; }
+  }
+  toast(`Restored ${ok} item${ok === 1 ? '' : 's'}` + (bad ? ` · ${bad} failed` : ''), bad ? 'err' : 'ok');
+  syncOrders(); loadAllReviews(); loadProducts();
 }
 
 function DemoCleanupModal() {
@@ -1234,6 +1259,26 @@ function toast(msg, kind = 'ok') {
   el.innerHTML = `<span class="inline-flex h-5 w-5 items-center justify-center rounded-full text-white" style="background:${color}">${kind === 'err' ? '!' : '✓'}</span>${msg}`;
   host.appendChild(el);
   setTimeout(() => { el.style.transition = 'opacity .4s, transform .4s'; el.style.opacity = '0'; el.style.transform = 'translateY(12px)'; setTimeout(() => el.remove(), 400); }, 2400);
+}
+let _undoTimer = null;
+function undoToast(msg, onUndo, secs = 12) {
+  const host = document.getElementById('toast-host');
+  if (!host) return;
+  const el = document.createElement('div');
+  el.className = 'toast-in pointer-events-auto glass depth-2 rounded-full px-5 py-3 text-sm font-medium flex items-center gap-3';
+  el.style.color = 'var(--ink)';
+  el.innerHTML = `<span class="inline-flex h-5 w-5 items-center justify-center rounded-full text-white" style="background:var(--ok)">✓</span><span>${msg}</span>`;
+  const kill = () => { el.style.transition = 'opacity .4s, transform .4s'; el.style.opacity = '0'; el.style.transform = 'translateY(12px)'; setTimeout(() => el.remove(), 400); };
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'font-semibold underline shrink-0';
+  btn.style.color = 'var(--brand)';
+  btn.textContent = 'Undo';
+  btn.onclick = () => { clearTimeout(_undoTimer); kill(); try { onUndo(); } catch (e) {} };
+  el.appendChild(btn);
+  host.appendChild(el);
+  clearTimeout(_undoTimer);
+  _undoTimer = setTimeout(kill, secs * 1000);
 }
 function pulseCart() {
   const c = document.getElementById('cart-btn');
@@ -2433,6 +2478,7 @@ S.editingId = null;
 S.showDemoModal = false;
 S.demoScan = null;
 S.demoPick = [];
+S.demoUndo = [];
 S.checkoutCountry = '';
 S.cartOpen = S.wishlistOpen = S.searchOpen = false;
 S.searchQuery = '';
