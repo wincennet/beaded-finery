@@ -1,34 +1,48 @@
 # Beaded Finery — storefront + owner admin
 
-Single self-contained file: **`index.html`**. No build, no install, no internet needed for logic
-(Tailwind + fonts load from CDN; product imagery is generated inline as SVG motifs).
+Live storefront and owner admin panel for **Beaded Finery by Manahil** — handmade beaded jewelry, Pakistan.
 
-## Run it
-1. Double-click `index.html` (opens in browser), **or** serve the folder:
-   ```bash
-   python -m http.server 8777
-   ```
-   then open http://localhost:8777
-2. Storefront loads by default.
-3. Click **Owner Admin** (bottom-right floating button) to toggle the admin panel.
+- **Frontend:** one file, [`index.html`](index.html) — Tailwind (CDN) + vanilla JS, no build step.
+- **Orders API:** [`api/orders.js`](api/orders.js) — Vercel serverless function (GET / POST / PATCH).
+- **Images:** `images/instagram/*` are real photos pulled from
+  [@beadedfineryby_manahil](https://www.instagram.com/beadedfineryby_manahil/); served via jsDelivr CDN.
 
-## What's built
-- Announcement marquee, glass sticky header, split hero with auto image slider
-- Shop Our Collections (2×3), Shop by Category carousel (8 categories)
-- About / 4 value props, Why Choose Us checklist, Best Sellers, New Arrivals
-- Instagram mosaic + newsletter footer
-- Shop page with category filter chips (all 8 exact categories)
-- Slide-out cart, real-time subtotal, auto **flat Rs. 300** shipping
-- 3-step checkout: shipping form → payment methods (Easypaisa / JazzCash / Bank Transfer) → payment-proof screen
-- Admin: product CRUD + stock toggle, order tracker with revenue + status toggles
-- State persists in `localStorage` (key `beadedFinery_v1`). "Reset demo data" in admin clears it.
+## Run locally
+```bash
+python -m http.server 8777
+```
+Open http://localhost:8777 — click **Owner Admin** (bottom-right) for the dashboard.
+(Orders fall back to local-only when there is no API / no database.)
 
-## Hero style
-Hero uses the **"Custom Spaces"** layout from motionsites.ai: centered editorial headline
-+ a curved, auto-scrolling 3D filmstrip (hairline-framed section, cursor-parallax, hover-to-pause,
-click a panel to jump to that category). Panels show a jewel-tone motif now; they swap to real
-photos automatically once products have image URLs.
+## Deploy (Vercel)
+Repo: https://github.com/wincennet/beaded-finery (public). Import it at vercel.com — framework
+auto-detects as "Other" (static + `api/`). Every push to `main` redeploys.
 
-## Placeholders that need your real content
-See the chat message — logo file, product photos, bank transfer details, Instagram links,
-about-us copy, and real order-notification wiring are all mocked for now.
+### Orders database (so the owner sees orders from any device)
+1. In the Vercel project → **Storage** → **Upstash for Redis** (free tier, no card).
+2. Connect it to the project. Vercel injects `KV_REST_API_URL` + `KV_REST_API_TOKEN`
+   (or `UPSTASH_REDIS_REST_URL` / `_TOKEN`) — `api/orders.js` reads either pair.
+3. Redeploy. Done — checkout writes orders to Redis, the admin panel reads them back.
+
+Until the store is connected the site still works; orders just stay in the shopper's browser.
+
+## Brand
+Palette (enforced): primary `#7A4667`, secondary `#B7A897`, bg `#F7F4EE`, text `#3A2A32`,
+hover `#9B7A8E`, border `#E2D8CC`, card `#EFE8E1`, success `#A7A087`, error `#D7A9B2`.
+Logo: script wordmark ("Beaded" in Sacramure/Sacramento + tracked "FINERY"); standalone
+[`images/logo.svg`](images/logo.svg). Hero uses the motionsites.ai **Custom Spaces** layout —
+editorial headline + curved auto-scrolling 3D filmstrip.
+
+## Payments (shown at checkout)
+- Easypaisa — Manahal Ahmed — 0334 4035732
+- JazzCash — Manahal Ahmed — 0334 4035732
+- Bank transfer — available on request
+- Full advance payment confirms the order · payment proof → beadedfinerybymanahil@gmail.com
+- Shipping: flat Rs. 300 across Pakistan, **free over Rs. 3000**, international varies.
+
+## Still needed from the owner
+- Clean product photos (the 8 Instagram reel-cover images are placeholders on ~7 products + the hero).
+- Real logo file (current wordmark is rebuilt from the reference; typo "Beadead" → "Beaded" fixed).
+- Bank transfer account details.
+- Real product catalogue (names / prices / stock) — current data is representative.
+- Custom `.com` domain → add in Vercel → Domains.
