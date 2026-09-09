@@ -371,6 +371,7 @@ const SHIP_DEFAULT = {
   pk: { rate: 300, freeOver: 3000 },
   blocked: ['IN'],
   intl: { default: 2500, zones: { ...INTL_ZONES } },
+  home: { whyImg: '' },
 };
 const shipCountry = () => String(S.checkoutCountry || S.fx.country || 'PK').toUpperCase();
 const shipBlocked = cc => (S.ship.blocked || []).includes(cc || shipCountry());
@@ -850,7 +851,7 @@ async function loadSettings() {
     const res = await fetch('/api/settings');
     if (!res.ok) return;
     const s = await res.json();
-    if (s && s.pk && s.intl) { S.ship = s; save(); render(); }
+    if (s && s.pk && s.intl) { s.home = s.home || { whyImg: '' }; S.ship = s; save(); render(); }
   } catch (e) {}
 }
 function bindShip(path, v) {
@@ -1536,12 +1537,15 @@ function WhyChooseUs() {
     'Customer love — hundreds of happy orders',
     'Your happiness means everything to us',
   ];
+  const custom = S.ship && S.ship.home && S.ship.home.whyImg;
+  const fallback = (S.products.find(p => p.img && p.bestSeller) || S.products.find(p => p.img) || {}).img;
+  const whySrc = custom || fallback || IG(8);
   return `
   <section class="py-16 sm:py-24" style="background:var(--card)">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 grid lg:grid-cols-2 gap-8 lg:gap-14 items-center">
       <div class="reveal scene">
         <div class="tilt rounded-[26px] overflow-hidden depth-3 aspect-[4/3] bg-[color:var(--card)]">
-          <img src="${IG(8)}" alt="Handmade beaded jewelry set by Beaded Finery" loading="lazy" class="w-full h-full object-cover photo-crop">
+          <img src="${whySrc}" alt="Handmade beaded jewelry by Beaded Finery" loading="lazy" class="w-full h-full object-cover photo-crop">
         </div>
       </div>
       <div class="reveal">
@@ -2152,14 +2156,14 @@ function Admin() {
       </div>
 
       <div class="flex flex-wrap gap-2 mb-6">
-        ${[['products','Products'],['orders','Orders'],['feedback','Feedback'],['shipping','Shipping']].map(([k,l]) => `
-          <button onclick="S.adminTab='${k}';save();render();${k==='feedback'?'loadAllReviews()':k==='shipping'?'loadSettings()':''}" class="rounded-full px-5 py-2.5 text-sm font-medium transition-all duration-300 ${
+        ${[['products','Products'],['orders','Orders'],['feedback','Feedback'],['shipping','Shipping'],['homepage','Homepage']].map(([k,l]) => `
+          <button onclick="S.adminTab='${k}';save();render();${k==='feedback'?'loadAllReviews()':(k==='shipping'||k==='homepage')?'loadSettings()':''}" class="rounded-full px-5 py-2.5 text-sm font-medium transition-all duration-300 ${
             S.adminTab === k ? 'text-white depth-brand' : ''
           }" style="${S.adminTab === k ? 'background:var(--brand)' : 'background:var(--card);color:var(--ink)'}">${l}${k==='feedback' && S.allReviews.filter(r=>!r.approved).length ? ` <span class="ml-1 inline-flex h-4 min-w-4 px-1 rounded-full text-[10px] items-center justify-center" style="background:${S.adminTab===k?'#fff':'var(--err)'};color:${S.adminTab===k?'var(--brand)':'#fff'}">${S.allReviews.filter(r=>!r.approved).length}</span>` : ''}</button>`).join('')}
         ${S.adminTab === 'products' ? `<button onclick="restoreStarterCatalogue()" class="ml-auto rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--sand)">Restore starter catalogue</button>` : S.adminTab === 'orders' ? `<button onclick="scanDemoData(this)" class="btn ml-auto rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--sand)"><span class="btn-label">🧹 Delete sample data</span></button><button onclick="resetAll()" class="rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--sand)">Reset local data</button>` : ''}
       </div>
 
-      ${S.adminTab === 'products' ? AdminProducts() : S.adminTab === 'orders' ? AdminOrders() : S.adminTab === 'shipping' ? AdminShipping() : AdminFeedback()}
+      ${S.adminTab === 'products' ? AdminProducts() : S.adminTab === 'orders' ? AdminOrders() : S.adminTab === 'shipping' ? AdminShipping() : S.adminTab === 'homepage' ? AdminHomepage() : AdminFeedback()}
     </div>
     ${DemoCleanupModal()}
   </div>`;
@@ -2405,6 +2409,52 @@ function AdminShipping() {
   </div>`;
 }
 
+async function handleHomeImage(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const status = document.getElementById('home-img-status');
+  if (status) status.textContent = 'Optimising photo…';
+  try {
+    const uri = await compressImage(file, 1400, 0.78);
+    S.ship.home = S.ship.home || {};
+    S.ship.home.whyImg = uri;
+    save(); render();
+  } catch (e) {
+    if (status) status.textContent = "Couldn't read that image — try a JPG or PNG.";
+  }
+}
+function clearHomeImage() {
+  S.ship.home = S.ship.home || {};
+  S.ship.home.whyImg = '';
+  save(); render();
+}
+
+function AdminHomepage() {
+  const cur = (S.ship.home && S.ship.home.whyImg) || '';
+  const fallback = (S.products.find(p => p.img && p.bestSeller) || S.products.find(p => p.img) || {}).img || IG(8);
+  return `
+  <div class="max-w-2xl space-y-5">
+    <div class="rounded-2xl p-5 depth-1" style="background:#fff;border:1px solid var(--line)">
+      <h4 class="font-display font-bold mb-1" style="color:var(--brand)">"Why Choose Us" photo</h4>
+      <p class="text-xs mb-4" style="color:var(--sand)">The large photo next to the "Why Choose Us" list on the home page. Use a bright, in-focus shot of your jewellery — landscape (wider than tall) works best. No custom photo? The site shows your top product photo automatically.</p>
+      <div class="rounded-xl overflow-hidden mb-3 aspect-[4/3]" style="border:1px solid var(--line);background:var(--card)">
+        <img src="${cur || fallback}" alt="preview" class="w-full h-full object-cover">
+      </div>
+      <p class="text-xs mb-3" style="color:var(--sand)">${cur ? 'Showing your uploaded photo.' : 'Showing an automatic photo — upload one below to replace it.'}</p>
+      <div class="flex flex-wrap gap-2">
+        <label class="btn btn-ghost px-4 py-2.5 text-sm cursor-pointer">
+          <span class="btn-label">📷 ${cur ? 'Replace photo' : 'Upload a photo'}</span>
+          <input type="file" accept="image/*" class="hidden" onchange="handleHomeImage(this)">
+        </label>
+        ${cur ? `<button type="button" onclick="clearHomeImage()" class="btn btn-ghost px-4 py-2.5 text-sm" style="color:var(--err)"><span class="btn-label">Remove</span></button>` : ''}
+      </div>
+      <p id="home-img-status" class="text-xs mt-2" style="color:var(--sand)"></p>
+    </div>
+    <button onclick="saveSettings(this)" class="btn btn-primary px-7 py-3 text-sm"><span class="btn-label">Save to website</span></button>
+    <p class="text-xs" style="color:var(--sand)">Changes show on the live site a moment after you save.</p>
+  </div>`;
+}
+
 /* ==================================================================== */
 /*  EFFECTS                                                              */
 /* ==================================================================== */
@@ -2484,6 +2534,7 @@ S.cartOpen = S.wishlistOpen = S.searchOpen = false;
 S.searchQuery = '';
 if (!Array.isArray(S.wishlist)) S.wishlist = [];
 if (!S.ship || !S.ship.pk) S.ship = SHIP_DEFAULT;
+if (!S.ship.home) S.ship.home = { whyImg: '' };
 try {
   const c = localStorage.getItem('bf_currency');
   if (c && CURRENCIES.includes(c)) {

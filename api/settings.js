@@ -48,6 +48,7 @@ const DEFAULTS = {
   pk: { rate: 300, freeOver: 3000 },
   blocked: ['IN'],
   intl: { default: 2500, zones: DEFAULT_ZONES },
+  home: { whyImg: '' },   // editable "Why Choose Us" photo (data URI or URL)
 };
 
 let redis = null;
@@ -72,6 +73,8 @@ function sanitize(raw) {
     const code = String(k).toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2);
     if (code.length === 2) zones[code] = num(v, DEFAULTS.intl.default);
   }
+  const whyImg = String((s.home && s.home.whyImg) || '');
+  const whyOk = (/^data:image\//.test(whyImg) || /^https?:\/\//.test(whyImg)) && whyImg.length < 800000;
   return {
     pk: {
       rate: num(s.pk && s.pk.rate, DEFAULTS.pk.rate),
@@ -84,6 +87,7 @@ function sanitize(raw) {
       default: num(s.intl && s.intl.default, DEFAULTS.intl.default),
       zones,
     },
+    home: { whyImg: whyOk ? whyImg : '' },
   };
 }
 
