@@ -1358,7 +1358,7 @@ function ProductCard(p, i = 0) {
       <h4 class="font-display text-[15px] font-semibold leading-tight" style="color:var(--ink)">${p.name}</h4>
       <div class="mt-auto pt-2 flex items-center gap-2">
         <span class="font-semibold" style="color:var(--brand)">${price(p.price)}</span>
-        ${p.oldPrice ? `<span class="text-xs line-through" style="color:var(--sand)">${price(p.oldPrice)}</span>` : ''}
+        ${p.oldPrice && p.oldPrice > p.price ? `<span class="text-xs line-through" style="color:var(--sand)">${price(p.oldPrice)}</span>` : ''}
       </div>
     </div>
   </div>`;
@@ -1997,7 +1997,7 @@ function AdminProducts() {
           <div class="h-14 w-14 rounded-lg overflow-hidden shrink-0">${p.img ? `<img src="${p.img}" alt="${p.name}" class="w-full h-full object-cover photo-crop">` : motif(p.category, 'ap'+p.id)}</div>
           <div class="flex-1 min-w-0">
             <p class="font-display text-sm font-semibold truncate" style="color:var(--ink)">${p.name}</p>
-            <p class="text-xs" style="color:var(--sand)">${p.category} · ${money(p.price)}${p.oldPrice ? ` (was ${money(p.oldPrice)})` : ''}</p>
+            <p class="text-xs" style="color:var(--sand)">${p.category} · ${money(p.price)}${p.oldPrice && p.oldPrice > p.price ? ` (was ${money(p.oldPrice)})` : ''}</p>
           </div>
           <button onclick="adminToggleStock('${p.id}')" class="text-[11px] font-semibold rounded-full px-3 py-1.5 text-white shrink-0" style="background:${p.stock ? 'var(--ok)' : 'var(--err)'}">
             ${p.stock ? 'In Stock' : 'Out of Stock'}
