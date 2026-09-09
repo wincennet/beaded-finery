@@ -212,6 +212,9 @@
   .pcard:hover .pcard-img { transform: scale(1.09); }
   .pcard .quick-add { transform: translateY(120%); transition: transform .45s cubic-bezier(0.34,1.56,0.64,1); }
   .pcard:hover .quick-add { transform: translateY(0); }
+  .no-bar { -ms-overflow-style: none; scrollbar-width: none; }
+  .no-bar::-webkit-scrollbar { display: none; }
+  .card-slider { scroll-snap-type: x mandatory; }
 
   .nav-link { position: relative; }
   .nav-link::after {
@@ -486,6 +489,7 @@ const DEFAULT_STATE = {
   showLogin: false,
   loginError: '',
   editImg: '',
+  editImgs: [],
   catalogPublished: false,
   fx: { currency: 'PKR', symbol: 'Rs. ', rate: 1, country: null, symbols: {} },
   fxRates: { PKR: 1 },
@@ -929,37 +933,62 @@ function compressImage(file, maxDim = 900, quality = 0.72) {
     reader.readAsDataURL(file);
   });
 }
-async function handleProductImage(input) {
+/* every image a product has (new `images` array, falling back to the old single `img`) */
+const productImages = (p) =>
+  (p && Array.isArray(p.images) && p.images.length) ? p.images : (p && p.img ? [p.img] : []);
+const MAX_PROD_IMGS = 6;
+
+/* the admin form edits this working list; adminUpsert reads it */
+function editThumbsHtml() {
+  if (!S.editImgs.length) return '<p class="text-xs" style="color:var(--sand)">No photos yet.</p>';
+  return S.editImgs.map((src, i) => `
+    <div class="relative group/th">
+      <img src="${src}" alt="photo ${i + 1}" class="h-16 w-16 object-cover rounded-lg" style="background:#fff;border:1px solid var(--line)">
+      ${i === 0
+        ? '<span class="absolute left-1 top-1 text-[9px] font-bold px-1 rounded text-white" style="background:rgba(0,0,0,.6)">Cover</span>'
+        : `<button type="button" onclick="makeCoverImg(${i})" class="absolute left-1 top-1 text-[9px] px-1 rounded text-white opacity-0 group-hover/th:opacity-100 transition" style="background:rgba(0,0,0,.55)">Set cover</button>`}
+      <button type="button" onclick="removeEditImg(${i})" title="Remove" class="absolute -right-1.5 -top-1.5 h-5 w-5 rounded-full text-white text-xs leading-none flex items-center justify-center" style="background:var(--err)">&times;</button>
+    </div>`).join('');
+}
+function renderEditThumbs() {
+  const box = document.getElementById('img-thumbs'); if (box) box.innerHTML = editThumbsHtml();
+  const hidden = document.getElementById('prod-img'); if (hidden) hidden.value = S.editImgs[0] || '';
   const status = document.getElementById('img-status');
-  const file = input.files && input.files[0];
-  if (!file) return;
-  if (status) status.textContent = 'Optimising photo…';
-  try {
-    const uri = await compressImage(file);
-    S.editImg = uri;
-    const hidden = document.getElementById('prod-img'); if (hidden) hidden.value = uri;
-    const prev = document.getElementById('img-preview'); if (prev) prev.src = uri;
-    const wrap = document.getElementById('img-preview-wrap'); if (wrap) wrap.hidden = false;
-    if (status) status.textContent = 'Photo ready ✓  (' + Math.round(uri.length / 1024) + ' KB)';
-  } catch (e) {
-    if (status) status.textContent = "Couldn't read that image — try a JPG or PNG.";
+  if (status) status.textContent = S.editImgs.length
+    ? S.editImgs.length + ' photo' + (S.editImgs.length > 1 ? 's' : '') + ' ready ✓'
+    : '';
+  S.editImg = S.editImgs[0] || '';
+  save();
+}
+async function handleProductImages(input) {
+  const files = Array.from(input.files || []);
+  if (!files.length) return;
+  const status = document.getElementById('img-status');
+  if (status) status.textContent = 'Optimising photo' + (files.length > 1 ? 's' : '') + '…';
+  let added = 0, failed = 0;
+  for (const f of files) {
+    if (S.editImgs.length >= MAX_PROD_IMGS) { toast('Up to ' + MAX_PROD_IMGS + ' photos per product', 'err'); break; }
+    try { S.editImgs.push(await compressImage(f)); added++; } catch (e) { failed++; }
   }
+  input.value = '';
+  renderEditThumbs();
+  if (failed && status) status.textContent += '  (' + failed + " couldn't be read — use JPG or PNG)";
 }
-function setProductImageUrl(v) {
-  const url = (v || '').trim();
-  S.editImg = url;
-  const prev = document.getElementById('img-preview');
-  const wrap = document.getElementById('img-preview-wrap');
-  if (url && prev && wrap) { prev.src = url; wrap.hidden = false; }
-  else if (wrap) wrap.hidden = true;
+function removeEditImg(i) { S.editImgs.splice(i, 1); renderEditThumbs(); }
+function makeCoverImg(i) {
+  if (i > 0 && S.editImgs[i]) { const [x] = S.editImgs.splice(i, 1); S.editImgs.unshift(x); renderEditThumbs(); }
 }
-function clearProductImage() {
-  S.editImg = '';
-  const hidden = document.getElementById('prod-img'); if (hidden) hidden.value = '';
-  const wrap = document.getElementById('img-preview-wrap'); if (wrap) wrap.hidden = true;
-  const fileIn = document.getElementById('img-file'); if (fileIn) fileIn.value = '';
-  const urlIn = document.getElementById('img-url'); if (urlIn) urlIn.value = '';
-  const status = document.getElementById('img-status'); if (status) status.textContent = '';
+function addProductImageUrl(v) {
+  const u = (v || '').trim();
+  if (!/^https?:\/\//.test(u)) { toast('Enter a valid image link (https://…)', 'err'); return; }
+  if (S.editImgs.length >= MAX_PROD_IMGS) { toast('Up to ' + MAX_PROD_IMGS + ' photos per product', 'err'); return; }
+  S.editImgs.push(u); renderEditThumbs();
+}
+function clearProductImage() { S.editImgs = []; renderEditThumbs(); }
+/* slide a product card's image strip (desktop arrows) */
+function bfSlide(id, dir) {
+  const el = document.getElementById('sl-' + id);
+  if (el) el.scrollBy({ left: dir * el.clientWidth, behavior: 'smooth' });
 }
 
 /* ---- admin ---- */
@@ -974,7 +1003,8 @@ function adminUpsert(form) {
     bestSeller: !!data.bestSeller,
     newArrival: !!data.newArrival,
     desc: data.desc?.trim() || '',
-    img: (S.editImg || data.img || '').trim() || null,
+    images: S.editImgs.slice(),
+    img: (S.editImgs[0] || S.editImg || data.img || '').trim() || null,
   };
   if (!payload.name) { toast('Name required', 'err'); return; }
   let saved;
@@ -989,10 +1019,11 @@ function adminUpsert(form) {
   }
   S.editingId = null;
   S.editImg = '';
+  S.editImgs = [];
   save(); render();
   if (S.catalogPublished) pushProduct(saved);
 }
-function adminEdit(id) { S.editingId = id; S.editImg = getProduct(id)?.img || ''; save(); render(); document.getElementById('admin-form-anchor')?.scrollIntoView({behavior:'smooth'}); }
+function adminEdit(id) { S.editingId = id; S.editImgs = productImages(getProduct(id)).slice(); S.editImg = S.editImgs[0] || ''; save(); render(); document.getElementById('admin-form-anchor')?.scrollIntoView({behavior:'smooth'}); }
 function adminDelete(id) {
   if (!confirm('Delete this product?')) return;
   S.products = S.products.filter(p => p.id !== id);
@@ -1337,17 +1368,30 @@ function Showcase(id, title, list) {
 
 function ProductCard(p, i = 0) {
   const inCart = S.cart.find(c => c.id === p.id);
+  const imgs = productImages(p);
+  const alt = `${p.name} — handmade beaded ${p.category.toLowerCase()} by Beaded Finery`;
+  const media = imgs.length > 1
+    ? `<div id="sl-${p.id}" class="card-slider flex h-full w-full overflow-x-auto no-bar"
+           onscroll="const ds=this.parentElement.querySelector('.sl-dots');if(ds)[...ds.children].forEach((d,di)=>d.style.opacity=(Math.round(this.scrollLeft/this.clientWidth)===di?'1':'.45'))">
+         ${imgs.map(src => `<img src="${src}" alt="${alt}" loading="lazy" class="w-full h-full flex-none object-cover photo-crop" style="scroll-snap-align:start">`).join('')}
+       </div>
+       <div class="sl-dots absolute inset-x-0 bottom-2 z-10 flex justify-center gap-1.5 pointer-events-none">
+         ${imgs.map((_, di) => `<span class="h-1.5 w-1.5 rounded-full bg-white" style="opacity:${di === 0 ? '1' : '.45'};box-shadow:0 0 3px rgba(0,0,0,.4)"></span>`).join('')}
+       </div>
+       <button type="button" aria-label="Previous photo" onclick="event.stopPropagation();bfSlide('${p.id}',-1)" class="hidden group-hover:flex absolute left-1.5 top-1/2 -translate-y-1/2 z-10 h-7 w-7 rounded-full glass items-center justify-center text-base leading-none" style="color:var(--brand)">‹</button>
+       <button type="button" aria-label="Next photo" onclick="event.stopPropagation();bfSlide('${p.id}',1)" class="hidden group-hover:flex absolute right-1.5 top-1/2 -translate-y-1/2 z-10 h-7 w-7 rounded-full glass items-center justify-center text-base leading-none" style="color:var(--brand)">›</button>`
+    : `<div class="pcard-img w-full h-full">${imgs[0] ? `<img src="${imgs[0]}" alt="${alt}" loading="lazy" class="w-full h-full object-cover photo-crop">` : motif(p.category, 'p'+p.id)}</div>`;
   return `
   <div class="pcard reveal tilt group rounded-2xl overflow-hidden depth-1 hover:depth-3 flex flex-col" style="background:var(--card);animation-delay:${i*60}ms">
     <div class="relative overflow-hidden aspect-square">
-      <div class="pcard-img w-full h-full">${p.img ? `<img src="${p.img}" alt="${p.name} — handmade beaded ${p.category.toLowerCase()} by Beaded Finery" loading="lazy" class="w-full h-full object-cover photo-crop">` : motif(p.category, 'p'+p.id)}</div>
-      ${p.tag ? `<span class="absolute left-3 top-3 glass rounded-full px-3 py-1 text-[11px] font-semibold" style="color:var(--brand)">${p.tag}</span>` : ''}
+      ${media}
+      ${p.tag ? `<span class="absolute left-3 top-3 z-10 glass rounded-full px-3 py-1 text-[11px] font-semibold" style="color:var(--brand)">${p.tag}</span>` : ''}
       <button onclick="event.stopPropagation();toggleWishlist('${p.id}')" title="${inWishlist(p.id) ? 'Remove from wishlist' : 'Add to wishlist'}"
-        class="absolute right-3 top-3 h-8 w-8 rounded-full glass flex items-center justify-center transition hover:scale-110" style="color:${inWishlist(p.id) ? 'var(--err)' : 'var(--brand)'}">
+        class="absolute right-3 top-3 z-10 h-8 w-8 rounded-full glass flex items-center justify-center transition hover:scale-110" style="color:${inWishlist(p.id) ? 'var(--err)' : 'var(--brand)'}">
         ${inWishlist(p.id) ? I.heartFill : I.heart}
       </button>
-      ${!p.stock ? `<span class="absolute left-3 bottom-3 rounded-full px-2.5 py-1 text-[10px] font-semibold text-white" style="background:var(--err)">Sold out</span>` : ''}
-      <div class="quick-add absolute inset-x-3 bottom-3">
+      ${!p.stock ? `<span class="absolute left-3 bottom-3 z-10 rounded-full px-2.5 py-1 text-[10px] font-semibold text-white" style="background:var(--err)">Sold out</span>` : ''}
+      <div class="quick-add absolute inset-x-3 bottom-3 z-10">
         <button onclick="addToCart('${p.id}')" ${!p.stock?'disabled':''} class="btn ${inCart?'btn-ghost bg-white':'btn-primary'} w-full py-2.5 text-xs">
           <span class="btn-label">${!p.stock ? 'Unavailable' : inCart ? `In cart (${inCart.qty}) · add more` : 'Add to Cart'}</span>
         </button>
@@ -1927,7 +1971,7 @@ function statCard(label, value, icon, color) {
 
 function AdminProducts() {
   const editing = S.editingId ? getProduct(S.editingId) : null;
-  const curImg = S.editImg || editing?.img || '';
+  const curImg = S.editImgs[0] || '';
   return `
   ${!S.catalogPublished ? `
   <div class="rounded-2xl p-4 sm:p-5 mb-5 flex flex-wrap items-center gap-3" style="background:var(--card);border:1px solid var(--sand)">
@@ -1962,20 +2006,21 @@ function AdminProducts() {
               <option value="out" ${editing?.stock === false ? 'selected' : ''}>Out of Stock</option>
             </select></label>
           <div class="rounded-xl p-3" style="background:var(--card)">
-            <span class="text-xs font-medium mb-2 block" style="color:var(--ink)">Product photo <span style="color:var(--sand)">(optional)</span></span>
-            <div id="img-preview-wrap" ${curImg ? '' : 'hidden'} class="mb-2">
-              <img id="img-preview" src="${curImg}" alt="preview" class="w-full max-h-48 object-contain rounded-lg" style="background:#fff">
-              <button type="button" onclick="clearProductImage()" class="mt-1 text-xs" style="color:var(--err)">Remove photo</button>
-            </div>
+            <span class="text-xs font-medium mb-2 block" style="color:var(--ink)">Product photos <span style="color:var(--sand)">(optional · up to 6 · first is the cover · customers can swipe through them)</span></span>
+            <div id="img-thumbs" class="flex flex-wrap gap-2 mb-2">${editThumbsHtml()}</div>
             <label class="btn btn-ghost w-full py-2.5 text-sm cursor-pointer">
-              <span class="btn-label">📷 Choose a photo from your device</span>
-              <input id="img-file" type="file" accept="image/*" class="hidden" onchange="handleProductImage(this)">
+              <span class="btn-label">📷 Add photos from your device</span>
+              <input id="img-file" type="file" accept="image/*" multiple class="hidden" onchange="handleProductImages(this)">
             </label>
             <p id="img-status" class="text-xs mt-1.5" style="color:var(--sand)"></p>
             <details class="mt-2">
-              <summary class="text-xs cursor-pointer" style="color:var(--sand)">or paste an image link instead</summary>
-              <input id="img-url" class="field mt-2 text-sm" placeholder="https://…" value="${/^https?:/.test(curImg) ? curImg : ''}" oninput="setProductImageUrl(this.value)">
+              <summary class="text-xs cursor-pointer" style="color:var(--sand)">or add an image link</summary>
+              <div class="flex gap-2 mt-2">
+                <input id="img-url" class="field text-sm" placeholder="https://…">
+                <button type="button" class="btn btn-ghost px-3 text-sm shrink-0" onclick="addProductImageUrl(document.getElementById('img-url').value);document.getElementById('img-url').value=''"><span class="btn-label">Add</span></button>
+              </div>
             </details>
+            ${S.editImgs.length ? `<button type="button" onclick="clearProductImage()" class="mt-2 text-xs" style="color:var(--err)">Remove all photos</button>` : ''}
           </div>
           <label class="block"><span class="text-xs font-medium mb-1 block" style="color:var(--ink)">Description</span>
             <textarea name="desc" rows="2" class="field" placeholder="Short product description">${editing?.desc || ''}</textarea></label>
@@ -1985,7 +2030,7 @@ function AdminProducts() {
           </div>
           <div class="flex gap-2 pt-1">
             <button class="btn btn-primary flex-1 py-3 text-sm"><span class="btn-label">${editing ? 'Save changes' : 'Add product'}</span></button>
-            ${editing ? `<button type="button" onclick="S.editingId=null;S.editImg='';save();render()" class="btn btn-ghost px-4 py-3 text-sm"><span class="btn-label">Cancel</span></button>` : ''}
+            ${editing ? `<button type="button" onclick="S.editingId=null;S.editImg='';S.editImgs=[];save();render()" class="btn btn-ghost px-4 py-3 text-sm"><span class="btn-label">Cancel</span></button>` : ''}
           </div>
         </form>
       </div>
@@ -2202,6 +2247,8 @@ S.feedbackSent = false;
 S.showLogin = false;
 S.loginError = '';
 S.editImg = '';
+S.editImgs = [];
+S.editingId = null;
 S.checkoutCountry = '';
 S.cartOpen = S.wishlistOpen = S.searchOpen = false;
 S.searchQuery = '';

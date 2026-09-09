@@ -44,9 +44,15 @@ function clean(p) {
     tag: o.tag ? String(o.tag).slice(0, 30) : undefined,
   };
   if (o.oldPrice) out.oldPrice = Math.max(0, Math.round(Number(o.oldPrice)));
-  const img = o.img ? String(o.img) : '';
-  // accept data:image URIs (compressed by the client) and normal URLs; cap size
-  if (img && (/^data:image\//.test(img) || /^https?:\/\//.test(img)) && img.length < 900000) out.img = img;
+  // accept data:image URIs (compressed by the client) and normal http(s) URLs
+  const okImg = (s) => s && (/^data:image\//.test(s) || /^https?:\/\//.test(s)) && s.length < 800000;
+  let imgs = Array.isArray(o.images) ? o.images.map((x) => String(x || '')).filter(okImg) : [];
+  const single = o.img ? String(o.img) : '';
+  if (!imgs.length && okImg(single)) imgs = [single];
+  imgs = imgs.slice(0, 6);
+  // backstop so one product can't blow up the Redis field
+  while (imgs.length > 1 && imgs.join('').length > 1600000) imgs.pop();
+  if (imgs.length) { out.images = imgs; out.img = imgs[0]; }
   return out;
 }
 
