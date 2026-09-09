@@ -49,7 +49,8 @@
   "address": { "@type": "PostalAddress", "addressCountry": "PK" },
   "sameAs": [
     "https://www.instagram.com/beadedfineryby_manahil/",
-    "https://www.tiktok.com/@beadedfinery"
+    "https://www.tiktok.com/@beadedfinery",
+    "https://www.youtube.com/@beadedfinery"
   ],
   "paymentAccepted": ["Easypaisa", "JazzCash", "Bank Transfer"],
   "makesOffer": {
@@ -404,6 +405,9 @@ const DEFAULT_STATE = {
   paymentMethod: 'Easypaisa',
   products: null,
   orders: [],
+  reviews: [],              // approved customer feedback (from server)
+  allReviews: [],           // every review (admin only)
+  feedbackForm: { name: '', rating: 5, message: '' },
   adminTab: 'products',
 };
 
@@ -492,7 +496,7 @@ async function enterAdmin(opts = {}) {
   setAdminKey(key);
   if (location.pathname.toLowerCase() !== '/admin') history.replaceState(null, '', '/admin');
   S.view = 'admin'; S.route = 'home';
-  window.scrollTo({ top: 0 }); save(); render(); syncOrders();
+  window.scrollTo({ top: 0 }); save(); render(); syncOrders(); loadAllReviews();
   toast('Owner Admin Panel', 'ok');
 }
 // single entry point used by the corner button
@@ -560,6 +564,58 @@ async function syncOrders() {
     S.orders = [...remote, ...S.orders.filter(o => !seen.has(o.id))];
     save(); if (S.view === 'admin') render();
   } catch (e) {}
+}
+
+/* ---- customer feedback / reviews ---- */
+async function loadReviews() {
+  try {
+    const res = await fetch('/api/feedback?public=1');
+    if (!res.ok) return;
+    const list = await res.json();
+    if (Array.isArray(list)) { S.reviews = list; save(); if (S.view === 'store') render(); }
+  } catch (e) {}
+}
+async function loadAllReviews() {
+  if (!adminKey()) return;
+  try {
+    const res = await fetch('/api/feedback', { headers: { 'x-admin-key': adminKey() } });
+    if (!res.ok) return;
+    const list = await res.json();
+    if (Array.isArray(list)) { S.allReviews = list; save(); if (S.view === 'admin') render(); }
+  } catch (e) {}
+}
+function bindFeedback(k, v) { S.feedbackForm[k] = v; save(); }
+async function submitFeedback(btn) {
+  const f = S.feedbackForm;
+  if (!f.name.trim() || f.message.trim().length < 3) { toast('Please add your name and a short message', 'err'); return; }
+  btn.classList.add('loading');
+  try {
+    const res = await fetch('/api/feedback', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: f.name.trim(), rating: f.rating, message: f.message.trim() }),
+    });
+    btn.classList.remove('loading');
+    if (res.ok) {
+      S.feedbackForm = { name: '', rating: 5, message: '' };
+      S.feedbackSent = true;
+      save(); render();
+      toast('Thank you for your feedback!', 'ok');
+    } else { toast('Could not send — please try again', 'err'); }
+  } catch (e) { btn.classList.remove('loading'); toast('Could not send — please try again', 'err'); }
+}
+function approveReview(id, approved) {
+  const r = S.allReviews.find(x => x.id === id);
+  if (r) r.approved = approved;
+  save(); render();
+  fetch('/api/feedback', { method: 'PATCH', headers: adminHeaders(), body: JSON.stringify({ id, approved }) })
+    .then(() => loadReviews());
+}
+function deleteReview(id) {
+  if (!confirm('Delete this review?')) return;
+  S.allReviews = S.allReviews.filter(x => x.id !== id);
+  save(); render(); toast('Review deleted', 'err');
+  fetch('/api/feedback', { method: 'DELETE', headers: adminHeaders(), body: JSON.stringify({ id }) })
+    .then(() => loadReviews());
 }
 
 /* ---- admin ---- */
@@ -662,10 +718,13 @@ const I = {
   insta: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-5 h-5"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17" cy="7" r="1" fill="currentColor"/></svg>',
 tiktok: '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M16 3c.3 2.2 1.6 3.9 3.9 4.2v2.6c-1.4.1-2.7-.3-3.9-1v6.6c0 3.6-2.6 5.9-5.8 5.9C7 27.3 4.5 25 4.5 21.5c0-3.3 2.6-5.7 6-5.5v2.7c-.5-.1-1-.2-1.5-.1-1.4.2-2.4 1.3-2.3 2.8.1 1.4 1.3 2.5 2.7 2.4 1.5-.1 2.4-1.2 2.4-2.8V3H16Z"/></svg>',
 whatsapp: '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2Zm5.8 14.2c-.2.6-1.2 1.2-1.7 1.2-.4 0-1 .1-3.2-.9-2.7-1.2-4.4-4-4.5-4.2-.1-.2-1-1.4-1-2.6s.6-1.8.9-2.1c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 2c.1.2.1.4 0 .5l-.4.5c-.1.2-.3.3-.1.6.1.3.7 1.1 1.4 1.7 1 .8 1.7 1.1 2 1.2.2.1.4.1.5-.1l.7-.8c.2-.2.3-.2.6-.1l1.9.9c.3.1.5.2.6.3.1.2.1.7-.1 1.3Z"/></svg>',
+youtube: '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M23 12s0-3.5-.4-5.2a3 3 0 0 0-2.1-2.1C18.7 4.3 12 4.3 12 4.3s-6.7 0-8.5.4A3 3 0 0 0 1.4 6.8C1 8.5 1 12 1 12s0 3.5.4 5.2a3 3 0 0 0 2.1 2.1c1.8.4 8.5.4 8.5.4s6.7 0 8.5-.4a3 3 0 0 0 2.1-2.1C23 15.5 23 12 23 12ZM9.8 15.3V8.7l5.7 3.3-5.7 3.3Z"/></svg>',
+star: '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="m12 2 3 6.5 7 .9-5 4.9 1.2 7L12 18l-6.4 3.3L7 14.3 2 9.4l7-.9L12 2Z"/></svg>',
 };
 const PHONE = '03244896469';
 const WA_URL = 'https://wa.me/923244896469';
 const TIKTOK_URL = 'https://www.tiktok.com/@beadedfinery';
+const YT_URL = 'https://www.youtube.com/@beadedfinery';
 
 /* ==================================================================== */
 /*  RENDER                                                               */
@@ -949,29 +1008,67 @@ const IG_POSTS = [
   { n: 8, href: 'https://www.instagram.com/beadedfineryby_manahil/reel/Dcoc4CkADei/', cap: 'New drop' },
 ];
 
+const stars = (n) => '★★★★★'.slice(0, Math.max(1, Math.min(5, n || 5))) + '☆☆☆☆☆'.slice(0, 5 - Math.max(1, Math.min(5, n || 5)));
+
 function Testimonials() {
-  const quotes = [
-    ['Absolutely loved my order! The quality is amazing and even more beautiful in person.', 'Areej'],
-    ['Such unique and pretty pieces. I got so many compliments wearing them.', 'Hira'],
-    ['Fast delivery and great customer service. Highly recommended.', 'Saira'],
+  const seed = [
+    { name: 'Areej',  rating: 5, message: 'Absolutely loved my order! The quality is amazing and even more beautiful in person.' },
+    { name: 'Hira',   rating: 5, message: 'Such unique and pretty pieces. I got so many compliments wearing them.' },
+    { name: 'Saira',  rating: 5, message: 'Fast delivery and great customer service. Highly recommended.' },
   ];
+  const reviews = (S.reviews && S.reviews.length ? S.reviews : seed).slice(0, 6);
   return `
-  <section class="py-16 sm:py-24" style="background:var(--card)">
+  <section id="feedback" class="py-16 sm:py-24" style="background:var(--card)">
     <div class="max-w-6xl mx-auto px-4 sm:px-6">
       ${sectionHead('What Our Customers Say', 'Real words from the Beaded Finery family.')}
       <div class="grid md:grid-cols-3 gap-4 sm:gap-6 scene">
-        ${quotes.map(([q,who],i) => `
+        ${reviews.map((r,i) => `
           <figure class="reveal tilt rounded-2xl p-6 flex flex-col gap-4 depth-1 hover:depth-2 scene" style="background:#fff;animation-delay:${i*80}ms">
             <span class="font-display text-4xl leading-none" style="color:var(--sand)">&ldquo;</span>
-            <blockquote class="text-sm leading-relaxed flex-1" style="color:var(--ink)">${q}</blockquote>
+            <blockquote class="text-sm leading-relaxed flex-1" style="color:var(--ink)">${r.message}</blockquote>
             <figcaption class="text-xs font-semibold tracking-wide flex items-center gap-2" style="color:var(--brand)">
-              <span class="inline-flex h-7 w-7 items-center justify-center rounded-full text-white" style="background:var(--sand)">${who[0]}</span>${who}
-              <span class="ml-auto" style="color:var(--ok)">★★★★★</span>
+              <span class="inline-flex h-7 w-7 items-center justify-center rounded-full text-white" style="background:var(--sand)">${(r.name||'?')[0].toUpperCase()}</span>${r.name}
+              <span class="ml-auto tracking-tight" style="color:var(--ok)">${stars(r.rating)}</span>
             </figcaption>
           </figure>`).join('')}
       </div>
+
+      ${FeedbackForm()}
     </div>
   </section>`;
+}
+
+function FeedbackForm() {
+  if (S.feedbackSent) return `
+    <div class="mt-10 max-w-lg mx-auto text-center rounded-2xl p-8 depth-1" style="background:#fff;border:1px solid var(--line)">
+      <div class="mx-auto h-12 w-12 rounded-full flex items-center justify-center text-white p-3 pop-check" style="background:var(--ok)">${I.check}</div>
+      <p class="font-display text-lg mt-3" style="color:var(--brand)">Thank you!</p>
+      <p class="text-sm mt-1" style="color:var(--ink)">Your feedback has been received. We read every message.</p>
+      <button onclick="S.feedbackSent=false;save();render()" class="btn btn-ghost mt-5 px-5 py-2.5 text-sm"><span class="btn-label">Leave another</span></button>
+    </div>`;
+  const f = S.feedbackForm;
+  return `
+  <div class="mt-12 max-w-lg mx-auto rounded-2xl p-6 sm:p-8 depth-1" style="background:#fff;border:1px solid var(--line)">
+    <h3 class="font-display text-xl font-bold" style="color:var(--brand)">Leave your feedback</h3>
+    <p class="text-sm mt-1 mb-5" style="color:var(--ink)">Bought from us? Tell us how it went — your review may appear on this page.</p>
+    <div class="space-y-4">
+      <label class="block">
+        <span class="text-xs font-medium mb-1.5 block" style="color:var(--ink)">Your name *</span>
+        <input value="${f.name || ''}" class="field" placeholder="e.g. Ayesha" oninput="bindFeedback('name',this.value)">
+      </label>
+      <div>
+        <span class="text-xs font-medium mb-1.5 block" style="color:var(--ink)">Rating</span>
+        <div class="flex gap-1">
+          ${[1,2,3,4,5].map(n => `<button type="button" onclick="bindFeedback('rating',${n});render()" class="text-2xl leading-none transition-transform hover:scale-110" style="color:${n <= (f.rating||5) ? 'var(--ok)' : 'var(--line)'}">★</button>`).join('')}
+        </div>
+      </div>
+      <label class="block">
+        <span class="text-xs font-medium mb-1.5 block" style="color:var(--ink)">Your feedback *</span>
+        <textarea rows="3" class="field" placeholder="What did you love? Anything we could do better?" oninput="bindFeedback('message',this.value)">${f.message || ''}</textarea>
+      </label>
+      <button onclick="submitFeedback(this)" class="btn btn-primary w-full py-3 text-sm"><span class="btn-label">Send feedback</span></button>
+    </div>
+  </div>`;
 }
 
 function InstagramFeed() {
@@ -993,6 +1090,9 @@ function InstagramFeed() {
       <a href="${TIKTOK_URL}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost px-6 py-3 text-sm inline-flex">
         ${I.tiktok}<span class="btn-label">TikTok</span>
       </a>
+      <a href="${YT_URL}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost px-6 py-3 text-sm inline-flex">
+        ${I.youtube}<span class="btn-label">YouTube</span>
+      </a>
       <a href="${WA_URL}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost px-6 py-3 text-sm inline-flex">
         ${I.whatsapp}<span class="btn-label">WhatsApp</span>
       </a>
@@ -1010,6 +1110,7 @@ function Footer() {
         <div class="mt-4 flex items-center gap-3">
           <a href="${IG_URL}" target="_blank" rel="noopener noreferrer" title="Instagram" class="h-9 w-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition">${I.insta}</a>
           <a href="${TIKTOK_URL}" target="_blank" rel="noopener noreferrer" title="TikTok" class="h-9 w-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition">${I.tiktok}</a>
+          <a href="${YT_URL}" target="_blank" rel="noopener noreferrer" title="YouTube" class="h-9 w-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition">${I.youtube}</a>
           <a href="${WA_URL}" target="_blank" rel="noopener noreferrer" title="WhatsApp" class="h-9 w-9 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition">${I.whatsapp}</a>
         </div>
       </div>
@@ -1019,6 +1120,7 @@ function Footer() {
           <li><button onclick="goto('home')" class="hover:text-white transition">Home</button></li>
           <li><button onclick="goto('shop')" class="hover:text-white transition">Shop</button></li>
           <li><button onclick="document.getElementById('about')?.scrollIntoView({behavior:'smooth'})" class="hover:text-white transition">About</button></li>
+          <li><button onclick="if(S.route!=='home'){goto('home');}setTimeout(()=>document.getElementById('feedback')?.scrollIntoView({behavior:'smooth'}),120)" class="hover:text-white transition text-left">Leave feedback</button></li>
           <li><a href="${WA_URL}" target="_blank" rel="noopener noreferrer" class="hover:text-white transition">WhatsApp ${PHONE}</a></li>
           <li><a href="mailto:beadedfinerybymanahil@gmail.com" class="hover:text-white transition">beadedfinerybymanahil@gmail.com</a></li>
         </ul>
@@ -1310,7 +1412,7 @@ function Admin() {
           <span class="hidden sm:inline text-xs font-medium px-2 py-1 rounded-full" style="background:var(--card);color:var(--brand)">Owner Panel</span>
         </div>
         <div class="flex items-center gap-2">
-          <button onclick="syncOrders()" class="btn btn-ghost px-3 py-2 text-xs" title="Refresh orders from server"><span class="btn-label">↻ Refresh</span></button>
+          <button onclick="syncOrders();loadAllReviews()" class="btn btn-ghost px-3 py-2 text-xs" title="Refresh from server"><span class="btn-label">↻ Refresh</span></button>
           <button onclick="toggleView()" class="btn btn-ghost px-4 py-2 text-xs"><span class="btn-label">← Store</span></button>
           <button onclick="signOutAdmin()" class="btn btn-ghost px-3 py-2 text-xs" style="border-color:var(--err);color:var(--err)"><span class="btn-label">Sign out</span></button>
         </div>
@@ -1325,15 +1427,15 @@ function Admin() {
         ${statCard('Out of Stock', outOfStock, '✕', 'var(--ok)')}
       </div>
 
-      <div class="flex gap-2 mb-6">
-        ${[['products','Product Management'],['orders','Order Management']].map(([k,l]) => `
-          <button onclick="S.adminTab='${k}';save();render()" class="rounded-full px-5 py-2.5 text-sm font-medium transition-all duration-300 ${
+      <div class="flex flex-wrap gap-2 mb-6">
+        ${[['products','Products'],['orders','Orders'],['feedback','Feedback']].map(([k,l]) => `
+          <button onclick="S.adminTab='${k}';save();render();${k==='feedback'?'loadAllReviews()':''}" class="rounded-full px-5 py-2.5 text-sm font-medium transition-all duration-300 ${
             S.adminTab === k ? 'text-white depth-brand' : ''
-          }" style="${S.adminTab === k ? 'background:var(--brand)' : 'background:var(--card);color:var(--ink)'}">${l}</button>`).join('')}
-        <button onclick="resetAll()" class="ml-auto rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--sand)">Reset demo data</button>
+          }" style="${S.adminTab === k ? 'background:var(--brand)' : 'background:var(--card);color:var(--ink)'}">${l}${k==='feedback' && S.allReviews.filter(r=>!r.approved).length ? ` <span class="ml-1 inline-flex h-4 min-w-4 px-1 rounded-full text-[10px] items-center justify-center" style="background:${S.adminTab===k?'#fff':'var(--err)'};color:${S.adminTab===k?'var(--brand)':'#fff'}">${S.allReviews.filter(r=>!r.approved).length}</span>` : ''}</button>`).join('')}
+        <button onclick="resetAll()" class="ml-auto rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--sand)">Reset local data</button>
       </div>
 
-      ${S.adminTab === 'products' ? AdminProducts() : AdminOrders()}
+      ${S.adminTab === 'products' ? AdminProducts() : S.adminTab === 'orders' ? AdminOrders() : AdminFeedback()}
     </div>
   </div>`;
 }
@@ -1452,6 +1554,35 @@ function AdminOrders() {
   </div>`;
 }
 
+function AdminFeedback() {
+  const list = S.allReviews || [];
+  if (!list.length) return `
+    <div class="rounded-2xl p-12 text-center depth-1" style="background:#fff;border:1px solid var(--line)">
+      <div class="mx-auto h-12 w-12 opacity-40" style="color:var(--sand)">${I.star}</div>
+      <p class="font-display text-lg mt-3" style="color:var(--brand)">No feedback yet</p>
+      <p class="text-sm mt-1" style="color:var(--sand)">Customer reviews from the site appear here. Approve one to show it on the storefront.</p>
+    </div>`;
+  return `
+  <p class="text-sm mb-4" style="color:var(--ink)">Toggle <strong>Show on site</strong> to publish a review in the “What Our Customers Say” section.</p>
+  <div class="space-y-3">
+    ${list.map(r => `
+      <div class="rounded-2xl p-5 depth-1" style="background:#fff;border:1px solid var(--line)">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <p class="font-semibold" style="color:var(--brand)">${r.name} <span class="tracking-tight ml-1" style="color:var(--ok)">${stars(r.rating)}</span></p>
+            <p class="text-[11px]" style="color:var(--sand)">${r.date || ''}</p>
+          </div>
+          <button onclick="deleteReview('${r.id}')" title="Delete review" class="p-1.5 rounded-lg hover:bg-black/5" style="color:var(--err)">${I.trash}</button>
+        </div>
+        <p class="text-sm mt-2" style="color:var(--ink)">${r.message}</p>
+        <label class="mt-3 inline-flex items-center gap-2 text-sm cursor-pointer" style="color:var(--ink)">
+          <input type="checkbox" ${r.approved ? 'checked' : ''} onchange="approveReview('${r.id}', this.checked)" class="accent-[var(--ok)] h-4 w-4">
+          Show on site
+        </label>
+      </div>`).join('')}
+  </div>`;
+}
+
 /* ==================================================================== */
 /*  EFFECTS                                                              */
 /* ==================================================================== */
@@ -1515,9 +1646,13 @@ const wantsAdmin = /^\/admin\/?$/i.test(location.pathname)
   || /(^|[?&])admin($|[=&])/i.test(location.search)
   || location.hash.toLowerCase() === '#admin';
 
+// Feedback form resets each fresh visit
+S.feedbackSent = false;
+
 render();
 if (wantsAdmin) enterAdmin({ fromUrl: true });
 syncOrders();
+loadReviews();
 </script>
 </body>
 </html>
