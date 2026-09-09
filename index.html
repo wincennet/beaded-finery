@@ -305,11 +305,50 @@
 /*  Vanilla JS · reactive render · localStorage persistence              */
 /* ==================================================================== */
 
-const money = n => 'Rs. ' + Number(n).toLocaleString('en-PK');
 const uid = () => Math.random().toString(36).slice(2, 9);
-const SHIPPING_FEE = 300;              // flat delivery across Pakistan
-const FREE_SHIP_MIN = 3000;            // free shipping at/above this subtotal
-const shipCost = sub => (!sub || sub >= FREE_SHIP_MIN) ? 0 : SHIPPING_FEE;
+
+/* ---------- Money: money() = owner-facing PKR · price() = customer-facing, converted ---------- */
+const money = n => 'Rs. ' + Math.round(Number(n) || 0).toLocaleString('en-PK');
+const CUR_SYM = { PKR: 'Rs. ', USD: '$', GBP: '£', EUR: '€', AED: 'AED ', SAR: 'SR ', CAD: 'C$', AUD: 'A$', INR: '₹' };
+const CURRENCIES = Object.keys(CUR_SYM);
+// countries offered in the checkout selector (code -> name). Owner ships wherever they set a rate.
+const COUNTRIES = {
+  PK: 'Pakistan', US: 'United States', GB: 'United Kingdom', CA: 'Canada', AU: 'Australia',
+  AE: 'UAE', SA: 'Saudi Arabia', QA: 'Qatar', KW: 'Kuwait', BH: 'Bahrain', OM: 'Oman',
+  DE: 'Germany', FR: 'France', IT: 'Italy', ES: 'Spain', NL: 'Netherlands', SE: 'Sweden',
+  NO: 'Norway', IE: 'Ireland', BE: 'Belgium', CH: 'Switzerland', MY: 'Malaysia', SG: 'Singapore',
+  BD: 'Bangladesh', LK: 'Sri Lanka', TR: 'Turkey', ZA: 'South Africa', NZ: 'New Zealand',
+  IN: 'India', XX: 'Other country',
+};
+const countryName = cc => COUNTRIES[String(cc || '').toUpperCase()] || cc || 'your country';
+function price(pkr) {
+  const cur = S.fx.currency, rate = S.fx.rate || 1;
+  if (cur === 'PKR' || rate === 1) return money(pkr);
+  let v = (Number(pkr) || 0) * rate;
+  v = cur === 'INR' ? Math.round(v)
+    : v < 50 ? Math.round(v * 100) / 100
+    : v < 500 ? Math.round(v * 2) / 2
+    : Math.round(v);
+  return (CUR_SYM[cur] || '') + v.toLocaleString('en-US', { maximumFractionDigits: 2 });
+}
+
+/* ---------- Shipping (config comes from /api/settings; all values PKR) ---------- */
+const SHIP_DEFAULT = {
+  pk: { rate: 300, freeOver: 3000 },
+  blocked: ['IN'],
+  intl: { default: 2500, zones: { US: 3000, GB: 3000, CA: 3200, AU: 3200, DE: 3000, FR: 3000, AE: 1500, SA: 1500 } },
+};
+const shipCountry = () => String(S.checkoutCountry || S.fx.country || 'PK').toUpperCase();
+const shipBlocked = cc => (S.ship.blocked || []).includes(cc || shipCountry());
+// returns PKR shipping cost, or null when we don't ship to that country
+function shipCost(sub, cc) {
+  cc = String(cc || shipCountry()).toUpperCase();
+  if (shipBlocked(cc)) return null;
+  if (cc === 'PK') return (!sub || sub >= (S.ship.pk.freeOver || 0)) ? 0 : (S.ship.pk.rate || 0);
+  const z = S.ship.intl.zones || {};
+  return z[cc] != null ? z[cc] : (S.ship.intl.default || 0);
+}
+function FREE_SHIP_MIN() { return S.ship.pk.freeOver || 0; }
 
 /* ---------- Category master list ---------- */
 const CATEGORIES = [
@@ -430,6 +469,11 @@ const DEFAULT_STATE = {
   loginError: '',
   editImg: '',
   catalogPublished: false,
+  fx: { currency: 'PKR', symbol: 'Rs. ', rate: 1, country: null },
+  fxRates: { PKR: 1 },
+  userCurrency: '',          // manual override (also mirrored to localStorage)
+  ship: SHIP_DEFAULT,
+  checkoutCountry: '',       // customer-selected at checkout
   adminTab: 'products',
 };
 
@@ -456,7 +500,8 @@ const getProduct = id => S.products.find(p => p.id === id);
 const cartDetailed = () => S.cart.map(c => ({ ...c, p: getProduct(c.id) })).filter(c => c.p);
 const cartCount = () => S.cart.reduce((s, c) => s + c.qty, 0);
 const cartSubtotal = () => cartDetailed().reduce((s, c) => s + c.p.price * c.qty, 0);
-const cartShipping = () => shipCost(cartSubtotal());
+const cartBlocked = () => shipCost(cartSubtotal()) === null;
+const cartShipping = () => { const c = shipCost(cartSubtotal()); return c == null ? 0 : c; };
 const cartTotal = () => (S.cart.length ? cartSubtotal() + cartShipping() : 0);
 
 /* ==================================================================== */
@@ -566,7 +611,7 @@ function openAdminPanel() {
   S.showLogin = false; S.loginError = '';
   if (location.pathname.toLowerCase() !== '/admin') history.replaceState(null, '', '/admin');
   S.view = 'admin'; S.route = 'home';
-  window.scrollTo({ top: 0 }); save(); render(); syncOrders(); loadAllReviews(); loadProducts();
+  window.scrollTo({ top: 0 }); save(); render(); syncOrders(); loadAllReviews(); loadProducts(); loadSettings();
   toast('Signed in', 'ok');
 }
 function cancelLogin() {
@@ -617,19 +662,25 @@ function nextStep() {
 function prevStep() { S.checkoutStep = Math.max(1, S.checkoutStep - 1); save(); render(); }
 function validateShipping() {
   const s = S.shipping;
-  return s.name.trim() && /^[0-9+\-\s]{7,}$/.test(s.phone) && /\S+@\S+\.\S+/.test(s.email) && s.address.trim() && s.city.trim();
+  if (shipBlocked()) return false;
+  return s.name.trim() && /^[0-9+\-\s()]{7,}$/.test(s.phone) && /\S+@\S+\.\S+/.test(s.email) && s.address.trim() && s.city.trim();
 }
 function bindShipping(k, v) { S.shipping[k] = v; save(); }
 async function placeOrder(btn) {
+  const cc = shipCountry();
+  if (shipBlocked(cc)) { toast(`We don't deliver to ${countryName(cc)} yet`, 'err'); return; }
   btn.classList.add('loading');
   const items = cartDetailed().map(c => ({ name: c.p.name, qty: c.qty, price: c.p.price }));
   const sub = cartSubtotal();
-  const ship = shipCost(sub);
+  const ship = shipCost(sub, cc) || 0;
   const order = {
     id: 'BF-' + (1043 + S.orders.length),
     name: S.shipping.name, phone: S.shipping.phone, email: S.shipping.email,
+    country: cc, countryName: countryName(cc),
     city: S.shipping.city, address: S.shipping.address, postal: S.shipping.postal, notes: S.shipping.notes,
     method: S.paymentMethod, items, subtotal: sub, shipping: ship, total: sub + ship,
+    currency: S.fx.currency, fxRate: S.fx.rate,
+    displayTotal: price(sub + ship),
     status: 'Pending Payment Verification', date: new Date().toISOString().slice(0, 10),
   };
   // Persist to the server so the owner sees it in the admin panel from any device.
@@ -715,6 +766,72 @@ function deleteReview(id) {
   save(); render(); toast('Review deleted', 'err');
   fetch('/api/feedback', { method: 'DELETE', headers: adminHeaders(), body: JSON.stringify({ id }) })
     .then(() => loadReviews());
+}
+
+/* ---- currency: detect country, fetch rates, let the visitor switch ---- */
+function applyCurrency(cur) {
+  cur = CURRENCIES.includes(cur) ? cur : 'PKR';
+  const rate = cur === 'PKR' ? 1 : (S.fxRates[cur] || S.fx.rate || 1);
+  S.fx = { ...S.fx, currency: cur, symbol: CUR_SYM[cur] || '', rate };
+}
+async function loadGeo() {
+  try {
+    const g = await fetch('/api/geo').then(r => r.json());
+    if (g && g.rates) S.fxRates = g.rates;
+    if (g && g.country) S.fx.country = g.country;
+    applyCurrency(S.userCurrency || (g && g.currency) || 'PKR');
+    save(); render();
+  } catch (e) {}
+}
+function setCurrency(cur) {
+  S.userCurrency = CURRENCIES.includes(cur) ? cur : '';
+  try { S.userCurrency ? localStorage.setItem('bf_currency', S.userCurrency) : localStorage.removeItem('bf_currency'); } catch (e) {}
+  applyCurrency(S.userCurrency || S.fx.currency);
+  save(); render();
+}
+
+/* ---- store settings (shipping rules) ---- */
+async function loadSettings() {
+  try {
+    const res = await fetch('/api/settings');
+    if (!res.ok) return;
+    const s = await res.json();
+    if (s && s.pk && s.intl) { S.ship = s; save(); render(); }
+  } catch (e) {}
+}
+function bindShip(path, v) {
+  const n = Math.max(0, Math.round(Number(v) || 0));
+  const parts = path.split('.');
+  let o = S.ship;
+  for (let i = 0; i < parts.length - 1; i++) { o[parts[i]] = o[parts[i]] || {}; o = o[parts[i]]; }
+  o[parts[parts.length - 1]] = n;
+  save();
+}
+function setBlocked(str) {
+  S.ship.blocked = [...new Set(String(str).toUpperCase().split(/[^A-Z]+/).filter(c => c.length === 2))];
+  save(); renderBlockedPreview();
+}
+function renderBlockedPreview() {
+  const el = document.getElementById('blocked-preview');
+  if (el) el.textContent = S.ship.blocked.length ? S.ship.blocked.join(', ') : '(none)';
+}
+function addZone() {
+  const cc = (document.getElementById('zone-cc')?.value || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 2);
+  const rate = Math.max(0, Math.round(Number(document.getElementById('zone-rate')?.value) || 0));
+  if (cc.length !== 2 || !rate) { toast('Enter a 2-letter country code and a rate', 'err'); return; }
+  S.ship.intl.zones = S.ship.intl.zones || {};
+  S.ship.intl.zones[cc] = rate;
+  save(); render();
+}
+function removeZone(cc) { delete S.ship.intl.zones[cc]; save(); render(); }
+async function saveSettings(btn) {
+  btn.classList.add('loading');
+  try {
+    const res = await fetch('/api/settings', { method: 'PUT', headers: adminHeaders(), body: JSON.stringify(S.ship) });
+    if (res.ok) { const j = await res.json(); if (j.settings) S.ship = j.settings; save(); render(); toast('Shipping settings saved', 'ok'); }
+    else toast('Could not save — check you are signed in', 'err');
+  } catch (e) { toast('Could not save', 'err'); }
+  btn.classList.remove('loading');
 }
 
 /* ---- catalogue: load from server, publish, per-product save ---- */
@@ -990,6 +1107,10 @@ function Header() {
       </nav>
 
       <div class="flex items-center gap-1 sm:gap-2" style="color:var(--ink)">
+        <select onchange="setCurrency(this.value)" title="Currency" aria-label="Currency"
+          class="text-xs font-medium rounded-full px-2 py-1.5 bg-transparent hover:bg-white/60 transition cursor-pointer outline-none" style="color:var(--ink)">
+          ${CURRENCIES.map(c => `<option value="${c}" ${S.fx.currency === c ? 'selected' : ''}>${c}</option>`).join('')}
+        </select>
         <button onclick="openSearch(true)" class="p-2 rounded-full hover:bg-white/60 transition" title="Search" aria-label="Search">${I.search}</button>
         <button onclick="openWishlist(true)" class="p-2 rounded-full hover:bg-white/60 transition relative" title="Wishlist" aria-label="Wishlist">${I.heart}
           <span class="absolute -right-0.5 -top-0.5 h-4 min-w-4 px-1 text-[10px] rounded-full text-white flex items-center justify-center ${S.wishlist.length?'':'hidden'}" style="background:var(--sand)">${S.wishlist.length}</span>
@@ -1203,8 +1324,8 @@ function ProductCard(p, i = 0) {
       <span class="text-[11px] uppercase tracking-wide" style="color:var(--sand)">${p.category}</span>
       <h4 class="font-display text-[15px] font-semibold leading-tight" style="color:var(--ink)">${p.name}</h4>
       <div class="mt-auto pt-2 flex items-center gap-2">
-        <span class="font-semibold" style="color:var(--brand)">${money(p.price)}</span>
-        ${p.oldPrice ? `<span class="text-xs line-through" style="color:var(--sand)">${money(p.oldPrice)}</span>` : ''}
+        <span class="font-semibold" style="color:var(--brand)">${price(p.price)}</span>
+        ${p.oldPrice ? `<span class="text-xs line-through" style="color:var(--sand)">${price(p.oldPrice)}</span>` : ''}
       </div>
     </div>
   </div>`;
@@ -1349,8 +1470,8 @@ function Footer() {
       <div>
         <p class="text-xs uppercase tracking-widest text-white/60 mb-4">Shipping &amp; Payment</p>
         <ul class="space-y-2 text-sm text-white/85">
-          <li>Pakistan: Flat Rs. 300 — free over Rs. 3000</li>
-          <li>International: varies by location</li>
+          <li>Pakistan: ${price(S.ship.pk.rate)} — free over ${price(S.ship.pk.freeOver)}</li>
+          <li>International: from ${price(S.ship.intl.default)}, by country</li>
           <li>Payment: Easypaisa &amp; JazzCash</li>
           <li>Bank transfer available on request</li>
           <li>Full advance payment confirms order</li>
@@ -1445,12 +1566,14 @@ function orderSummaryCard() {
   <div class="rounded-2xl p-5 mb-6 depth-1" style="background:var(--card)">
     <p class="font-display font-semibold mb-3" style="color:var(--brand)">Order Summary</p>
     <div class="space-y-2 text-sm" style="color:var(--ink)">
-      ${items.map(i => `<div class="flex justify-between gap-2"><span>${i.name} × ${i.qty}</span><span>${money(i.price*i.qty)}</span></div>`).join('')}
+      ${items.map(i => `<div class="flex justify-between gap-2"><span>${i.name} × ${i.qty}</span><span>${price(i.price*i.qty)}</span></div>`).join('')}
       <div class="h-px my-2" style="background:var(--line)"></div>
-      <div class="flex justify-between"><span>Subtotal</span><span>${money(sub)}</span></div>
-      <div class="flex justify-between"><span>Shipping${shipCost(sub) ? ' (flat, Pakistan)' : ''}</span><span>${shipCost(sub) ? money(shipCost(sub)) : 'Free'}</span></div>
-      ${shipCost(sub) ? `<div class="flex justify-between text-xs" style="color:var(--ok)"><span>Add ${money(FREE_SHIP_MIN - sub)} for free shipping</span><span></span></div>` : ''}
-      <div class="flex justify-between font-semibold text-base pt-1" style="color:var(--brand)"><span>Total</span><span>${money(sub + shipCost(sub))}</span></div>
+      <div class="flex justify-between"><span>Subtotal</span><span>${price(sub)}</span></div>
+      ${shipCost(sub) === null
+        ? `<div class="flex justify-between text-xs" style="color:var(--err)"><span>Delivery to ${countryName(shipCountry())}</span><span>not available</span></div>`
+        : `<div class="flex justify-between"><span>Shipping${shipCost(sub) ? (shipCountry()==='PK'?' (Pakistan)':' ('+countryName(shipCountry())+')') : ''}</span><span>${shipCost(sub) ? price(shipCost(sub)) : 'Free'}</span></div>
+           ${shipCost(sub) && shipCountry()==='PK' ? `<div class="flex justify-between text-xs" style="color:var(--ok)"><span>Add ${price(FREE_SHIP_MIN() - sub)} for free shipping</span><span></span></div>` : ''}`}
+      <div class="flex justify-between font-semibold text-base pt-1" style="color:var(--brand)"><span>Total</span><span>${shipCost(sub)===null ? '—' : price(sub + shipCost(sub))}</span></div>
     </div>
   </div>`;
 }
@@ -1464,12 +1587,21 @@ function CheckoutStep1() {
         ? `<textarea rows="3" class="field" placeholder="${opts.ph||''}" oninput="bindShipping('${k}',this.value)">${s[k]||''}</textarea>`
         : `<input value="${s[k]||''}" type="${opts.type||'text'}" class="field" placeholder="${opts.ph||''}" oninput="bindShipping('${k}',this.value)">`}
     </label>`;
+  const cc = shipCountry();
+  const blocked = shipBlocked(cc);
+  const sc = shipCost(cartSubtotal(), cc);
   return `
   ${orderSummaryCard()}
   <div class="rounded-2xl p-6 sm:p-8 depth-1" style="background:#fff;border:1px solid var(--line)">
     <h3 class="font-display text-xl font-bold mb-1" style="color:var(--brand)">Shipping Details</h3>
     <p class="text-sm mb-6" style="color:var(--ink)">Where should we send your Beaded Finery?</p>
     <div class="grid sm:grid-cols-2 gap-4">
+      <label class="block sm:col-span-2">
+        <span class="text-xs font-medium mb-1.5 block" style="color:var(--ink)">Country *</span>
+        <select class="field" onchange="S.checkoutCountry=this.value;save();render()">
+          ${Object.entries(COUNTRIES).map(([code,name]) => `<option value="${code}" ${cc===code?'selected':''}>${name}</option>`).join('')}
+        </select>
+      </label>
       ${f('name','Full name',{req:true,ph:'Manahil Ahmed'})}
       ${f('phone','Phone / WhatsApp',{req:true,ph:'03XX-XXXXXXX',type:'tel'})}
       ${f('email','Email',{req:true,ph:'you@email.com',type:'email'})}
@@ -1478,12 +1610,17 @@ function CheckoutStep1() {
       ${f('postal','Postal code',{ph:'54000'})}
       ${f('notes','Order notes (optional)',{ph:'Anything we should know?'})}
     </div>
-    <div class="mt-4 text-xs flex items-center gap-2 rounded-lg p-3" style="background:var(--card);color:var(--ink)">
-      ${I.truck}<span>Flat <strong>Rs. 300</strong> delivery anywhere in Pakistan. Worldwide shipping calculated on request.</span>
-    </div>
+    ${blocked ? `
+      <div class="mt-4 text-sm flex items-start gap-2 rounded-lg p-3 text-white" style="background:var(--err)">
+        <span class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/25">!</span>
+        <span>We're sorry — we don't deliver to <strong>${countryName(cc)}</strong> yet. Please pick another country, or message us on WhatsApp.</span>
+      </div>` : `
+      <div class="mt-4 text-xs flex items-center gap-2 rounded-lg p-3" style="background:var(--card);color:var(--ink)">
+        ${I.truck}<span>Delivery to ${countryName(cc)}: <strong>${sc ? price(sc) : 'Free'}</strong>${cc==='PK' ? ` · free over ${price(FREE_SHIP_MIN())}` : ''}.</span>
+      </div>`}
     <div class="mt-7 flex justify-between items-center gap-4">
       <span class="text-sm" style="color:var(--sand)">Step 1 of 3</span>
-      <button onclick="nextStep()" class="btn btn-primary px-8 py-3.5 text-sm"><span class="btn-label">Continue to Payment</span></button>
+      <button onclick="nextStep()" ${blocked?'disabled':''} class="btn btn-primary px-8 py-3.5 text-sm"><span class="btn-label">Continue to Payment</span></button>
     </div>
   </div>`;
 }
@@ -1507,9 +1644,11 @@ function CheckoutStep2() {
     </div>
 
     <div class="flex items-center justify-between rounded-xl p-4 mb-6 text-sm" style="background:var(--canvas);border:1px dashed var(--sand);color:var(--ink)">
-      <span class="flex items-center gap-2">${I.truck} Shipping — ${ship ? 'flat delivery across Pakistan' : 'free (order over Rs. 3000)'}</span>
-      <strong style="color:var(--brand)">${ship ? money(ship) : 'Free'}</strong>
+      <span class="flex items-center gap-2">${I.truck} Shipping to ${countryName(shipCountry())}${ship===0 ? ' (free)' : ''}</span>
+      <strong style="color:var(--brand)">${ship === null ? 'Not available' : ship ? price(ship) : 'Free'}</strong>
     </div>
+
+    ${S.fx.currency !== 'PKR' ? `<p class="text-xs rounded-lg p-2.5 mb-4" style="background:var(--card);color:var(--ink)">Prices convert automatically. Easypaisa / JazzCash are paid in Pakistani Rupees — the exact PKR amount is shown on the next screen. For payment from outside Pakistan, message us on WhatsApp and we'll arrange it.</p>` : ''}
 
     <p class="text-xs font-semibold uppercase tracking-wide mb-3" style="color:var(--sand)">Choose a payment method — Easypaisa &amp; JazzCash</p>
     <div class="space-y-3">
@@ -1555,7 +1694,7 @@ function CheckoutStep3() {
       <a href="${WA_URL}" target="_blank" rel="noopener noreferrer" class="mt-2 flex items-center justify-center gap-2 rounded-lg bg-white p-3 text-sm font-medium" style="border:1px solid var(--line);color:var(--brand)">${I.whatsapp} ${PHONE}</a>
       ${o ? `<div class="mt-4 text-sm space-y-1">
         <div class="flex justify-between"><span>Method chosen</span><strong>${o.method}</strong></div>
-        <div class="flex justify-between"><span>Amount to send</span><strong style="color:var(--brand)">${money(o.total)}</strong></div>
+        <div class="flex justify-between"><span>Amount to send</span><strong style="color:var(--brand)">${price(o.total)}${S.fx.currency!=='PKR'?` <span class="font-normal" style="color:var(--sand)">(${money(o.total)})</span>`:''}</strong></div>
       </div>` : ''}
     </div>
 
@@ -1585,7 +1724,7 @@ function CartDrawer() {
             <div class="flex-1 min-w-0">
               <p class="font-display text-sm font-semibold truncate" style="color:var(--ink)">${c.p.name}</p>
               <p class="text-xs" style="color:var(--sand)">${c.p.category}</p>
-              <p class="text-sm font-semibold mt-0.5" style="color:var(--brand)">${money(c.p.price)}</p>
+              <p class="text-sm font-semibold mt-0.5" style="color:var(--brand)">${price(c.p.price)}</p>
               <div class="flex items-center gap-2 mt-2">
                 <button onclick="setQty('${c.id}',${c.qty - 1})" class="h-7 w-7 rounded-full flex items-center justify-center" style="background:var(--card);color:var(--ink)">${I.minus}</button>
                 <span class="w-6 text-center text-sm font-medium">${c.qty}</span>
@@ -1603,11 +1742,15 @@ function CartDrawer() {
 
       ${lines.length ? `
       <div class="p-5 space-y-3" style="border-top:1px solid var(--line);background:var(--canvas)">
-        <div class="flex justify-between text-sm" style="color:var(--ink)"><span>Subtotal</span><span>${money(cartSubtotal())}</span></div>
-        <div class="flex justify-between text-sm" style="color:var(--ink)"><span>Shipping${cartShipping() ? ' (flat, Pakistan)' : ''}</span><span>${cartShipping() ? money(cartShipping()) : 'Free'}</span></div>
-        ${cartShipping() ? `<div class="text-xs" style="color:var(--ok)">Add ${money(FREE_SHIP_MIN - cartSubtotal())} more for free shipping</div>` : ''}
-        <div class="flex justify-between font-semibold" style="color:var(--brand)"><span>Total</span><span>${money(cartTotal())}</span></div>
-        <button onclick="openCart(false);goto('checkout')" class="btn btn-primary w-full py-3.5 text-sm"><span class="btn-label">Checkout</span></button>
+        <div class="flex justify-between text-sm" style="color:var(--ink)"><span>Subtotal</span><span>${price(cartSubtotal())}</span></div>
+        ${cartBlocked() ? `
+          <p class="text-xs rounded-lg p-2" style="background:var(--err);color:#fff">Sorry, we don't deliver to ${countryName(shipCountry())} yet.</p>
+        ` : `
+          <div class="flex justify-between text-sm" style="color:var(--ink)"><span>Shipping${cartShipping() ? (shipCountry()==='PK'?' (Pakistan)':' ('+countryName(shipCountry())+')') : ''}</span><span>${cartShipping() ? price(cartShipping()) : 'Free'}</span></div>
+          ${cartShipping() && shipCountry()==='PK' ? `<div class="text-xs" style="color:var(--ok)">Add ${price(FREE_SHIP_MIN() - cartSubtotal())} more for free shipping</div>` : ''}
+          <div class="flex justify-between font-semibold" style="color:var(--brand)"><span>Total</span><span>${price(cartTotal())}</span></div>
+        `}
+        <button onclick="openCart(false);goto('checkout')" ${cartBlocked()?'disabled':''} class="btn btn-primary w-full py-3.5 text-sm"><span class="btn-label">Checkout</span></button>
         <button onclick="clearCart()" class="w-full text-xs" style="color:var(--sand)">Clear cart</button>
       </div>` : ''}
     </aside>
@@ -1632,7 +1775,7 @@ function WishlistDrawer() {
             <div class="flex-1 min-w-0">
               <p class="font-display text-sm font-semibold truncate" style="color:var(--ink)">${p.name}</p>
               <p class="text-xs" style="color:var(--sand)">${p.category}</p>
-              <p class="text-sm font-semibold mt-0.5" style="color:var(--brand)">${money(p.price)}</p>
+              <p class="text-sm font-semibold mt-0.5" style="color:var(--brand)">${price(p.price)}</p>
               <div class="flex items-center gap-2 mt-2">
                 <button onclick="addToCart('${p.id}')" ${!p.stock?'disabled':''} class="btn ${p.stock?'btn-primary':'btn-ghost'} px-3 py-1.5 text-xs"><span class="btn-label">${p.stock ? 'Add to cart' : 'Sold out'}</span></button>
                 <button onclick="toggleWishlist('${p.id}')" class="ml-auto p-1.5 rounded-lg hover:bg-black/5" style="color:var(--err)">${I.trash}</button>
@@ -1667,7 +1810,7 @@ function SearchResultsInner() {
         <div class="aspect-square overflow-hidden">${p.img ? `<img src="${p.img}" alt="${p.name}" class="w-full h-full object-cover photo-crop">` : motif(p.category,'sr'+p.id)}</div>
         <div class="p-2.5">
           <p class="text-[13px] font-semibold leading-tight truncate" style="color:var(--ink)">${p.name}</p>
-          <p class="text-xs mt-0.5" style="color:var(--brand)">${money(p.price)}</p>
+          <p class="text-xs mt-0.5" style="color:var(--brand)">${price(p.price)}</p>
         </div>
       </button>`).join('')}
   </div>`;
@@ -1710,7 +1853,7 @@ function Admin() {
           <span class="hidden sm:inline text-xs font-medium px-2 py-1 rounded-full" style="background:var(--card);color:var(--brand)">Owner Panel</span>
         </div>
         <div class="flex items-center gap-2">
-          <button onclick="syncOrders();loadAllReviews();loadProducts()" class="btn btn-ghost px-3 py-2 text-xs" title="Refresh from server"><span class="btn-label">↻ Refresh</span></button>
+          <button onclick="syncOrders();loadAllReviews();loadProducts();loadSettings()" class="btn btn-ghost px-3 py-2 text-xs" title="Refresh from server"><span class="btn-label">↻ Refresh</span></button>
           <button onclick="toggleView()" class="btn btn-ghost px-4 py-2 text-xs"><span class="btn-label">← Store</span></button>
           <button onclick="signOutAdmin()" class="btn btn-ghost px-3 py-2 text-xs" style="border-color:var(--err);color:var(--err)"><span class="btn-label">Sign out</span></button>
         </div>
@@ -1726,14 +1869,14 @@ function Admin() {
       </div>
 
       <div class="flex flex-wrap gap-2 mb-6">
-        ${[['products','Products'],['orders','Orders'],['feedback','Feedback']].map(([k,l]) => `
-          <button onclick="S.adminTab='${k}';save();render();${k==='feedback'?'loadAllReviews()':''}" class="rounded-full px-5 py-2.5 text-sm font-medium transition-all duration-300 ${
+        ${[['products','Products'],['orders','Orders'],['feedback','Feedback'],['shipping','Shipping']].map(([k,l]) => `
+          <button onclick="S.adminTab='${k}';save();render();${k==='feedback'?'loadAllReviews()':k==='shipping'?'loadSettings()':''}" class="rounded-full px-5 py-2.5 text-sm font-medium transition-all duration-300 ${
             S.adminTab === k ? 'text-white depth-brand' : ''
           }" style="${S.adminTab === k ? 'background:var(--brand)' : 'background:var(--card);color:var(--ink)'}">${l}${k==='feedback' && S.allReviews.filter(r=>!r.approved).length ? ` <span class="ml-1 inline-flex h-4 min-w-4 px-1 rounded-full text-[10px] items-center justify-center" style="background:${S.adminTab===k?'#fff':'var(--err)'};color:${S.adminTab===k?'var(--brand)':'#fff'}">${S.allReviews.filter(r=>!r.approved).length}</span>` : ''}</button>`).join('')}
-        ${S.adminTab === 'products' ? `<button onclick="restoreStarterCatalogue()" class="ml-auto rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--sand)">Restore starter catalogue</button>` : `<button onclick="resetAll()" class="ml-auto rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--sand)">Reset local data</button>`}
+        ${S.adminTab === 'products' ? `<button onclick="restoreStarterCatalogue()" class="ml-auto rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--sand)">Restore starter catalogue</button>` : S.adminTab === 'orders' ? `<button onclick="resetAll()" class="ml-auto rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--sand)">Reset local data</button>` : ''}
       </div>
 
-      ${S.adminTab === 'products' ? AdminProducts() : S.adminTab === 'orders' ? AdminOrders() : AdminFeedback()}
+      ${S.adminTab === 'products' ? AdminProducts() : S.adminTab === 'orders' ? AdminOrders() : S.adminTab === 'shipping' ? AdminShipping() : AdminFeedback()}
     </div>
   </div>`;
 }
@@ -1849,13 +1992,14 @@ function AdminOrders() {
           <div class="min-w-0">
             <p class="font-display font-bold" style="color:var(--brand)">${o.id} <span class="font-body text-xs font-normal" style="color:var(--sand)">· ${o.date || ''}</span></p>
             <p class="text-sm mt-1" style="color:var(--ink)">${o.name || '—'} · ${o.phone || ''}</p>
-            <p class="text-xs mt-0.5" style="color:var(--ink)">${[o.address, o.city, o.postal].filter(Boolean).join(', ')}</p>
+            <p class="text-xs mt-0.5" style="color:var(--ink)">${[o.address, o.city, o.postal, o.countryName || (o.country && countryName(o.country))].filter(Boolean).join(', ')}</p>
             <p class="text-xs mt-0.5" style="color:var(--sand)">${o.email || ''} · Payment: ${o.method || '—'}</p>
             ${o.notes ? `<p class="text-xs mt-1 italic" style="color:var(--ink)">Note: ${o.notes}</p>` : ''}
           </div>
           <div class="text-right shrink-0">
             <p class="font-display text-lg font-bold" style="color:var(--brand)">${money(o.total || 0)}</p>
             <p class="text-[11px]" style="color:var(--sand)">incl. ${money(o.shipping || 0)} shipping</p>
+            ${o.currency && o.currency !== 'PKR' ? `<p class="text-[11px]" style="color:var(--sand)">customer saw ${o.displayTotal || o.currency}</p>` : ''}
           </div>
         </div>
 
@@ -1902,6 +2046,58 @@ function AdminFeedback() {
           Show on site
         </label>
       </div>`).join('')}
+  </div>`;
+}
+
+function AdminShipping() {
+  const zones = Object.entries(S.ship.intl.zones || {}).sort();
+  const fld = (label, path, val) => `
+    <label class="block">
+      <span class="text-xs font-medium mb-1 block" style="color:var(--ink)">${label}</span>
+      <input type="number" min="0" class="field" value="${val}" oninput="bindShip('${path}',this.value)">
+    </label>`;
+  return `
+  <div class="max-w-2xl space-y-5">
+    <p class="text-sm" style="color:var(--ink)">All amounts are in <strong>Rupees (PKR)</strong>. Customers abroad see them auto-converted to their currency.</p>
+
+    <div class="rounded-2xl p-5 depth-1" style="background:#fff;border:1px solid var(--line)">
+      <h4 class="font-display font-bold mb-3" style="color:var(--brand)">Pakistan</h4>
+      <div class="grid grid-cols-2 gap-3">
+        ${fld('Delivery charge (Rs.)', 'pk.rate', S.ship.pk.rate)}
+        ${fld('Free delivery over (Rs.)', 'pk.freeOver', S.ship.pk.freeOver)}
+      </div>
+    </div>
+
+    <div class="rounded-2xl p-5 depth-1" style="background:#fff;border:1px solid var(--line)">
+      <h4 class="font-display font-bold mb-1" style="color:var(--brand)">Countries we don't ship to</h4>
+      <p class="text-xs mb-2" style="color:var(--sand)">2-letter country codes, comma-separated. IN = India.</p>
+      <input class="field text-sm" value="${(S.ship.blocked || []).join(', ')}" oninput="setBlocked(this.value)" placeholder="IN">
+      <p class="text-xs mt-1" style="color:var(--ink)">Currently blocked: <span id="blocked-preview">${S.ship.blocked.length ? S.ship.blocked.join(', ') : '(none)'}</span></p>
+    </div>
+
+    <div class="rounded-2xl p-5 depth-1" style="background:#fff;border:1px solid var(--line)">
+      <h4 class="font-display font-bold mb-3" style="color:var(--brand)">International delivery</h4>
+      ${fld('Default charge for any other country (Rs.)', 'intl.default', S.ship.intl.default)}
+      <p class="text-xs mt-4 mb-2 font-medium" style="color:var(--ink)">Per-country overrides</p>
+      <div class="space-y-2">
+        ${zones.length ? zones.map(([cc, rate]) => `
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-mono w-8" style="color:var(--brand)">${cc}</span>
+            <span class="text-sm flex-1 truncate" style="color:var(--ink)">${countryName(cc)}</span>
+            <input type="number" min="0" class="field !py-1.5 w-28 text-sm" value="${rate}" oninput="S.ship.intl.zones['${cc}']=Math.max(0,Math.round(+this.value||0));save()">
+            <button onclick="removeZone('${cc}')" class="p-1.5 rounded-lg hover:bg-black/5" style="color:var(--err)">${I.trash}</button>
+          </div>`).join('') : `<p class="text-xs" style="color:var(--sand)">No overrides — everywhere uses the default rate.</p>`}
+      </div>
+      <div class="flex items-end gap-2 mt-3">
+        <label class="block"><span class="text-[11px] mb-1 block" style="color:var(--sand)">Country code</span>
+          <input id="zone-cc" class="field !py-1.5 w-24 text-sm" placeholder="AE" maxlength="2"></label>
+        <label class="block"><span class="text-[11px] mb-1 block" style="color:var(--sand)">Rate (Rs.)</span>
+          <input id="zone-rate" type="number" min="0" class="field !py-1.5 w-28 text-sm" placeholder="1500"></label>
+        <button onclick="addZone()" class="btn btn-ghost px-4 py-2 text-sm"><span class="btn-label">Add</span></button>
+      </div>
+    </div>
+
+    <button onclick="saveSettings(this)" class="btn btn-primary px-7 py-3 text-sm"><span class="btn-label">Save shipping settings</span></button>
   </div>`;
 }
 
@@ -1973,12 +2169,17 @@ S.feedbackSent = false;
 S.showLogin = false;
 S.loginError = '';
 S.editImg = '';
+S.checkoutCountry = '';
 S.cartOpen = S.wishlistOpen = S.searchOpen = false;
 S.searchQuery = '';
 if (!Array.isArray(S.wishlist)) S.wishlist = [];
+if (!S.ship || !S.ship.pk) S.ship = SHIP_DEFAULT;
+try { const c = localStorage.getItem('bf_currency'); if (c && CURRENCIES.includes(c)) { S.userCurrency = c; applyCurrency(c); } } catch (e) {}
 
 render();
 if (wantsAdmin) enterAdmin({ fromUrl: true });
+loadGeo();
+loadSettings();
 loadProducts();
 syncOrders();
 loadReviews();
