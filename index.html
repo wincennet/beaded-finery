@@ -577,6 +577,15 @@ function setOrderStatus(id, status) {
     body: JSON.stringify({ id, status }),
   }).catch(() => {});
 }
+function deleteOrder(id) {
+  if (!confirm('Delete this order? This cannot be undone.')) return;
+  S.orders = S.orders.filter(x => x.id !== id);
+  save(); render(); toast('Order deleted', 'err');
+  fetch('/api/orders', {
+    method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id }),
+  }).catch(() => {});
+}
 
 function resetAll() {
   if (!confirm('Reset all demo data (products, cart, orders)?')) return;
@@ -1396,6 +1405,7 @@ function AdminOrders() {
               o.status === st ? 'text-white depth-1 scale-105' : ''
             }" style="${o.status === st ? `background:${badge(st)}` : 'background:var(--canvas);color:var(--ink);border:1px solid var(--line)'}">${st}</button>`).join('')}
           <button onclick="cycleOrderStatus('${o.id}')" class="ml-auto text-[11px] font-medium rounded-full px-3 py-1.5" style="background:var(--brand);color:#fff">Advance →</button>
+          <button onclick="deleteOrder('${o.id}')" title="Delete order" class="p-1.5 rounded-lg hover:bg-black/5" style="color:var(--err)">${I.trash}</button>
         </div>
       </div>`).join('')}
   </div>`;

@@ -4,6 +4,7 @@
  * GET    /api/orders        → list all orders (newest first)   [owner admin panel]
  * POST   /api/orders        → create an order                  [checkout]
  * PATCH  /api/orders        → { id, status } update one order   [admin status toggle]
+ * DELETE /api/orders        → { id } remove one order          [admin delete]
  *
  * Storage: Upstash Redis (Vercel Marketplace → "Upstash for Redis", free tier).
  * Once connected to the project, Vercel injects KV_REST_API_URL / KV_REST_API_TOKEN
@@ -31,7 +32,7 @@ const readBody = (req) => {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Cache-Control', 'no-store');
 
@@ -40,7 +41,7 @@ export default async function handler(req, res) {
   // No datastore connected yet — degrade gracefully instead of 500ing.
   if (!redis) {
     if (req.method === 'GET') return res.status(200).json([]);
-    if (req.method === 'POST' || req.method === 'PATCH') {
+    if (['POST', 'PATCH', 'DELETE'].includes(req.method)) {
       return res.status(200).json({ ok: true, persisted: false });
     }
     return res.status(405).json({ error: 'Method not allowed' });
@@ -70,6 +71,14 @@ export default async function handler(req, res) {
       if (o) o.status = status;
       await redis.set(KEY, list);
       return res.status(200).json({ ok: true, updated: !!o });
+    }
+
+    if (req.method === 'DELETE') {
+      const { id } = readBody(req);
+      const list = (await redis.get(KEY)) || [];
+      const next = list.filter((o) => o.id !== id);
+      await redis.set(KEY, next);
+      return res.status(200).json({ ok: true, removed: list.length - next.length });
     }
 
     return res.status(405).json({ error: 'Method not allowed' });
