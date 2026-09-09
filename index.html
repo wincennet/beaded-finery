@@ -415,17 +415,8 @@ function load() {
 function save() { try { localStorage.setItem('beadedFinery_v1', JSON.stringify(S)); } catch (e) {} }
 
 function seedOrders() {
-  return [
-    { id:'BF-1042', name:'Hira Khan', phone:'0301-2345678', city:'Lahore', method:'Easypaisa',
-      items:[{name:'Falak Drop Earrings',qty:1,price:1250},{name:'Noor Beaded Bracelet',qty:2,price:1200}],
-      status:'Pending Payment Verification', date:'2026-09-07' },
-    { id:'BF-1041', name:'Ayesha Malik', phone:'0333-9988776', city:'Karachi', method:'JazzCash',
-      items:[{name:'Manahil Signature Set',qty:1,price:3600}], status:'Processing', date:'2026-09-06' },
-    { id:'BF-1040', name:'Fatima Raza', phone:'0300-1122334', city:'Islamabad', method:'Bank Transfer',
-      items:[{name:'Mahtab Layered Necklace',qty:1,price:2400},{name:'Payal Anklet',qty:1,price:780}],
-      status:'Shipped', date:'2026-09-04' },
-  ].map(o => { const sub = o.items.reduce((s,i)=>s+i.price*i.qty,0);
-    return { ...o, subtotal:sub, shipping:shipCost(sub), total:sub+shipCost(sub) }; });
+  // Live store — real orders come from the server (/api/orders). No demo data.
+  return [];
 }
 
 /* ==================================================================== */
@@ -464,13 +455,39 @@ function goto(route) {
   save(); render();
 }
 function setCategory(c) { S.activeCategory = c; S.route = 'shop'; window.scrollTo({top: 320, behavior:'smooth'}); save(); render(); }
-function toggleView() {
-  S.view = S.view === 'store' ? 'admin' : 'store';
-  S.route = 'home';
-  window.scrollTo({ top: 0 });
-  save(); render();
-  if (S.view === 'admin') syncOrders();
-  toast(S.view === 'admin' ? 'Owner Admin Panel' : 'Back to storefront', 'ok');
+/* ---- owner auth ---- */
+function adminKey() { try { return sessionStorage.getItem('bf_adminKey') || ''; } catch (e) { return ''; } }
+function setAdminKey(k) { try { k ? sessionStorage.setItem('bf_adminKey', k) : sessionStorage.removeItem('bf_adminKey'); } catch (e) {} }
+function adminHeaders(json) {
+  const h = json === false ? {} : { 'Content-Type': 'application/json' };
+  if (adminKey()) h['x-admin-key'] = adminKey();
+  return h;
+}
+
+async function toggleView() {
+  if (S.view === 'admin') {
+    S.view = 'store'; S.route = 'home';
+    window.scrollTo({ top: 0 }); save(); render();
+    toast('Back to storefront', 'ok');
+    return;
+  }
+  // entering admin — require the owner password
+  let key = adminKey();
+  if (!key) {
+    key = (prompt('Owner password') || '').trim();
+    if (!key) return;
+  }
+  const ok = await fetch('/api/orders', { headers: { 'x-admin-key': key } }).then(r => r.ok).catch(() => false);
+  if (!ok) { setAdminKey(''); toast('Wrong password', 'err'); return; }
+  setAdminKey(key);
+  S.view = 'admin'; S.route = 'home';
+  window.scrollTo({ top: 0 }); save(); render(); syncOrders();
+  toast('Owner Admin Panel', 'ok');
+}
+function signOutAdmin() {
+  setAdminKey('');
+  S.view = 'store'; S.route = 'home';
+  save(); render(); toast('Signed out', 'ok');
 }
 
 /* ---- checkout ---- */
@@ -516,10 +533,12 @@ async function placeOrder(btn) {
   toast(order.synced ? 'Order placed — send your payment proof' : 'Order saved — send your payment proof', 'ok');
 }
 
-/* Pull server-side orders into the admin panel (merges with any local ones) */
+/* Pull server-side orders into the admin panel (owner only) */
 async function syncOrders() {
+  if (!adminKey()) return;
   try {
-    const res = await fetch('/api/orders');
+    const res = await fetch('/api/orders', { headers: { 'x-admin-key': adminKey() } });
+    if (res.status === 401) { setAdminKey(''); return; }
     if (!res.ok) return;
     const remote = await res.json();
     if (!Array.isArray(remote)) return;
@@ -572,19 +591,13 @@ function cycleOrderStatus(id) {
 function setOrderStatus(id, status) {
   const o = S.orders.find(x => x.id === id);
   o.status = status; save(); render();
-  fetch('/api/orders', {
-    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, status }),
-  }).catch(() => {});
+  fetch('/api/orders', { method: 'PATCH', headers: adminHeaders(), body: JSON.stringify({ id, status }) }).catch(() => {});
 }
 function deleteOrder(id) {
   if (!confirm('Delete this order? This cannot be undone.')) return;
   S.orders = S.orders.filter(x => x.id !== id);
   save(); render(); toast('Order deleted', 'err');
-  fetch('/api/orders', {
-    method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id }),
-  }).catch(() => {});
+  fetch('/api/orders', { method: 'DELETE', headers: adminHeaders(), body: JSON.stringify({ id }) }).catch(() => {});
 }
 
 function resetAll() {
@@ -1252,20 +1265,19 @@ function CartDrawer() {
   </div>`;
 }
 
-/* ---------- VIEW TOGGLE ---------- */
+/* ---------- OWNER SIGN-IN (subtle, password-gated) ---------- */
 function ViewToggle() {
   return `
-  <button onclick="toggleView()" title="Toggle Owner Admin Panel"
-    class="fixed z-[90] bottom-6 right-6 btn glass depth-2 px-4 py-3 text-xs font-semibold" style="color:var(--brand)">
-    ${I.chart}<span class="btn-label hidden sm:inline">${S.view === 'admin' ? 'View Store' : 'Owner Admin'}</span>
-  </button>`;
+  <button onclick="toggleView()" title="Owner sign in" aria-label="Owner sign in"
+    class="fixed z-[90] bottom-4 right-4 h-9 w-9 rounded-full glass flex items-center justify-center opacity-30 hover:opacity-100 transition-opacity duration-300"
+    style="color:var(--brand)">${I.user}</button>`;
 }
 
 /* -------------------------------------------------------------------- */
 /*  ADMIN                                                                */
 /* -------------------------------------------------------------------- */
 function Admin() {
-  const revenue = S.orders.reduce((s, o) => s + o.total, 0);
+  const revenue = S.orders.reduce((s, o) => s + (o.total || 0), 0);
   const pending = S.orders.filter(o => o.status === 'Pending Payment Verification').length;
   const outOfStock = S.products.filter(p => !p.stock).length;
   return `
@@ -1279,7 +1291,8 @@ function Admin() {
         </div>
         <div class="flex items-center gap-2">
           <button onclick="syncOrders()" class="btn btn-ghost px-3 py-2 text-xs" title="Refresh orders from server"><span class="btn-label">↻ Refresh</span></button>
-          <button onclick="toggleView()" class="btn btn-ghost px-4 py-2 text-xs"><span class="btn-label">← Back to Store</span></button>
+          <button onclick="toggleView()" class="btn btn-ghost px-4 py-2 text-xs"><span class="btn-label">← Store</span></button>
+          <button onclick="signOutAdmin()" class="btn btn-ghost px-3 py-2 text-xs" style="border-color:var(--err);color:var(--err)"><span class="btn-label">Sign out</span></button>
         </div>
       </div>
     </header>
@@ -1378,24 +1391,32 @@ function AdminProducts() {
 
 function AdminOrders() {
   const badge = s => s === 'Shipped' ? 'var(--ok)' : s === 'Processing' ? 'var(--sand)' : 'var(--err)';
+  if (!S.orders.length) return `
+    <div class="rounded-2xl p-12 text-center depth-1" style="background:#fff;border:1px solid var(--line)">
+      <div class="mx-auto h-12 w-12 opacity-40" style="color:var(--sand)">${I.box}</div>
+      <p class="font-display text-lg mt-3" style="color:var(--brand)">No orders yet</p>
+      <p class="text-sm mt-1" style="color:var(--sand)">New orders from the store will appear here automatically.</p>
+    </div>`;
   return `
   <div class="space-y-4">
     ${S.orders.map(o => `
       <div class="reveal rounded-2xl p-5 depth-1" style="background:#fff;border:1px solid var(--line)">
         <div class="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p class="font-display font-bold" style="color:var(--brand)">${o.id} <span class="font-body text-xs font-normal" style="color:var(--sand)">· ${o.date}</span></p>
-            <p class="text-sm mt-1" style="color:var(--ink)">${o.name} · ${o.phone || ''} · ${o.city || ''}</p>
-            <p class="text-xs mt-0.5" style="color:var(--sand)">Payment: ${o.method}</p>
+          <div class="min-w-0">
+            <p class="font-display font-bold" style="color:var(--brand)">${o.id} <span class="font-body text-xs font-normal" style="color:var(--sand)">· ${o.date || ''}</span></p>
+            <p class="text-sm mt-1" style="color:var(--ink)">${o.name || '—'} · ${o.phone || ''}</p>
+            <p class="text-xs mt-0.5" style="color:var(--ink)">${[o.address, o.city, o.postal].filter(Boolean).join(', ')}</p>
+            <p class="text-xs mt-0.5" style="color:var(--sand)">${o.email || ''} · Payment: ${o.method || '—'}</p>
+            ${o.notes ? `<p class="text-xs mt-1 italic" style="color:var(--ink)">Note: ${o.notes}</p>` : ''}
           </div>
-          <div class="text-right">
-            <p class="font-display text-lg font-bold" style="color:var(--brand)">${money(o.total)}</p>
-            <p class="text-[11px]" style="color:var(--sand)">incl. ${money(o.shipping)} shipping</p>
+          <div class="text-right shrink-0">
+            <p class="font-display text-lg font-bold" style="color:var(--brand)">${money(o.total || 0)}</p>
+            <p class="text-[11px]" style="color:var(--sand)">incl. ${money(o.shipping || 0)} shipping</p>
           </div>
         </div>
 
         <div class="mt-3 rounded-lg p-3 text-sm space-y-1" style="background:var(--card);color:var(--ink)">
-          ${o.items.map(i => `<div class="flex justify-between"><span>${i.name} × ${i.qty}</span><span>${money(i.price * i.qty)}</span></div>`).join('')}
+          ${(o.items || []).map(i => `<div class="flex justify-between"><span>${i.name} × ${i.qty}</span><span>${money((i.price || 0) * (i.qty || 0))}</span></div>`).join('')}
         </div>
 
         <div class="mt-4 flex flex-wrap items-center gap-2">
@@ -1466,6 +1487,8 @@ function sectionHead(title, sub, left = false) {
 /* ==================================================================== */
 /*  BOOT                                                                 */
 /* ==================================================================== */
+// Admin view always requires re-auth per browser session.
+if (S.view === 'admin' && !adminKey()) S.view = 'store';
 render();
 syncOrders();
 </script>
