@@ -713,11 +713,7 @@ function Header() {
   return `
   <header class="sticky top-0 z-40 glass depth-1">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 h-[68px] flex items-center justify-between gap-4">
-      <button onclick="goto('home')" class="flex items-center gap-2.5 group" aria-label="Beaded Finery home">
-        <span class="relative inline-flex h-9 w-9 items-center justify-center rounded-full text-white anim-float-slow shrink-0" style="background:var(--brand)">
-          <span class="font-display text-lg">B</span>
-          <span class="sparkle absolute -right-1 -top-1 h-2 w-2 rounded-full" style="background:var(--sand)"></span>
-        </span>
+      <button onclick="goto('home')" class="flex items-center group" aria-label="Beaded Finery home">
         ${Wordmark('leading-none')}
       </button>
 
@@ -1310,7 +1306,6 @@ function Admin() {
     <header class="sticky top-0 z-40 glass depth-1">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
         <div class="flex items-center gap-2.5">
-          <span class="inline-flex h-8 w-8 items-center justify-center rounded-full text-white font-display shrink-0" style="background:var(--brand)">B</span>
           ${Wordmark()}
           <span class="hidden sm:inline text-xs font-medium px-2 py-1 rounded-full" style="background:var(--card);color:var(--brand)">Owner Panel</span>
         </div>
