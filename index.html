@@ -805,10 +805,21 @@ async function loadGeo() {
     save(); render();
   } catch (e) {}
 }
+// representative home country for each currency — picking a currency also moves the delivery country
+const CUR_COUNTRY = {
+  USD:'US', EUR:'DE', GBP:'GB', AUD:'AU', CAD:'CA', JPY:'JP', CNY:'CN', INR:'IN', PKR:'PK',
+  AED:'AE', SAR:'SA', QAR:'QA', KWD:'KW', BHD:'BH', OMR:'OM', JOD:'JO', ILS:'IL', TRY:'TR',
+  CHF:'CH', NZD:'NZ', HKD:'HK', KRW:'KR', SGD:'SG', MYR:'MY', THB:'TH', IDR:'ID', PHP:'PH',
+  SEK:'SE', NOK:'NO', DKK:'DK', PLN:'PL', CZK:'CZ', HUF:'HU', RON:'RO', RUB:'RU',
+  ZAR:'ZA', NGN:'NG', KES:'KE', EGP:'EG', MAD:'MA', BRL:'BR', MXN:'MX', ARS:'AR', CLP:'CL',
+  COP:'CO', BDT:'BD', LKR:'LK', NPR:'NP',
+};
 function setCurrency(cur) {
   S.userCurrency = CURRENCIES.includes(cur) ? cur : '';
   try { S.userCurrency ? localStorage.setItem('bf_currency', S.userCurrency) : localStorage.removeItem('bf_currency'); } catch (e) {}
   applyCurrency(S.userCurrency || S.fx.currency);
+  // picking a currency also sets where we deliver to (customer can still change it at checkout)
+  if (S.userCurrency && CUR_COUNTRY[S.userCurrency]) S.checkoutCountry = CUR_COUNTRY[S.userCurrency];
   save(); render();
 }
 
@@ -2196,7 +2207,14 @@ S.cartOpen = S.wishlistOpen = S.searchOpen = false;
 S.searchQuery = '';
 if (!Array.isArray(S.wishlist)) S.wishlist = [];
 if (!S.ship || !S.ship.pk) S.ship = SHIP_DEFAULT;
-try { const c = localStorage.getItem('bf_currency'); if (c && CURRENCIES.includes(c)) { S.userCurrency = c; applyCurrency(c); } } catch (e) {}
+try {
+  const c = localStorage.getItem('bf_currency');
+  if (c && CURRENCIES.includes(c)) {
+    S.userCurrency = c;
+    applyCurrency(c);
+    if (CUR_COUNTRY[c]) S.checkoutCountry = CUR_COUNTRY[c];
+  }
+} catch (e) {}
 
 render();
 if (wantsAdmin) enterAdmin({ fromUrl: true });
