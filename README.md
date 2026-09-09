@@ -26,6 +26,13 @@ auto-detects as "Other" (static + `api/`). Every push to `main` redeploys.
 
 Until the store is connected the site still works; orders just stay in the shopper's browser.
 
+### Owner admin panel
+- URL: **`https://beadedfinery.com/admin`** (also `?admin` or `#admin`). No visible control on the storefront.
+- Auth: set an env var **`ADMIN_KEY`** in Vercel (Project → Settings → Environment Variables, all environments).
+  Visiting `/admin` prompts for it; the key is kept in `sessionStorage` for that browser session only.
+- The orders API enforces it server-side: `GET`/`PATCH`/`DELETE /api/orders` need header `x-admin-key: <ADMIN_KEY>`.
+  Without `ADMIN_KEY` set, the panel is locked for everyone (fail-closed). `POST` (checkout) stays public.
+
 ## Brand
 Palette (enforced): primary `#7A4667`, secondary `#B7A897`, bg `#F7F4EE`, text `#3A2A32`,
 hover `#9B7A8E`, border `#E2D8CC`, card `#EFE8E1`, success `#A7A087`, error `#D7A9B2`.
