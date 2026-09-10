@@ -287,6 +287,10 @@
   [x-cloak] { display: none !important; }
   .no-scroll { overflow: hidden; }
 
+  /* deter casual image saving/dragging (not bulletproof — stops right-click, long-press, drag) */
+  img { -webkit-user-drag: none; -khtml-user-drag: none; -moz-user-drag: none; user-drag: none;
+        -webkit-touch-callout: none; user-select: none; pointer-events: none; }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::after, *::before { animation-duration: .001s !important; transition-duration: .05s !important; }
   }
@@ -497,6 +501,8 @@ const DEFAULT_STATE = {
   paymentMethod: 'Credit / Debit Card',
   cardPay: { enabled: false, env: 'sandbox' },
   pickSize: {},
+  viewProduct: null,
+  viewImg: 0,
   products: null,
   orders: [],
   reviews: [],              // approved customer feedback (from server)
@@ -585,6 +591,22 @@ function changeCartSize(key, newSize) {
 }
 function clearCart() { S.cart = []; save(); render(); }
 function closePanels() { S.cartOpen = S.wishlistOpen = S.searchOpen = false; }
+function openProduct(id) {
+  if (!getProduct(id)) return;
+  S.viewProduct = id; S.viewImg = 0;
+  document.body.classList.add('no-scroll'); save(); render();
+}
+function closeProduct() {
+  S.viewProduct = null;
+  if (!S.cartOpen && !S.wishlistOpen && !S.searchOpen) document.body.classList.remove('no-scroll');
+  save(); render();
+}
+function modalImg(i) {
+  const p = getProduct(S.viewProduct); if (!p) return;
+  const n = productImages(p).length || 1;
+  S.viewImg = ((i % n) + n) % n; render();
+}
+function setModalImg(i) { S.viewImg = i; render(); }
 function openCart(v) { closePanels(); S.cartOpen = v; document.body.classList.toggle('no-scroll', v); render(); }
 function openWishlist(v) { closePanels(); S.wishlistOpen = v; document.body.classList.toggle('no-scroll', v); render(); }
 function openSearch(v) {
@@ -1410,6 +1432,7 @@ function Store() {
   ${CartDrawer()}
   ${WishlistDrawer()}
   ${SearchPanel()}
+  ${ProductModal()}
   `;
 }
 
@@ -1656,7 +1679,7 @@ function ProductCard(p, i = 0) {
   const imgs = productImages(p);
   const alt = `${p.name} — handmade beaded ${p.category.toLowerCase()} by Beaded Finery`;
   const media = imgs.length > 1
-    ? `<div id="sl-${p.id}" class="card-slider flex h-full w-full overflow-x-auto no-bar"
+    ? `<div id="sl-${p.id}" onclick="openProduct('${p.id}')" class="card-slider flex h-full w-full overflow-x-auto no-bar cursor-pointer"
            onscroll="const ds=this.parentElement.querySelector('.sl-dots');if(ds)[...ds.children].forEach((d,di)=>d.style.opacity=(Math.round(this.scrollLeft/this.clientWidth)===di?'1':'.45'))">
          ${imgs.map(src => `<img src="${src}" alt="${alt}" loading="lazy" class="w-full h-full flex-none object-cover photo-crop" style="scroll-snap-align:start">`).join('')}
        </div>
@@ -1665,7 +1688,7 @@ function ProductCard(p, i = 0) {
        </div>
        <button type="button" aria-label="Previous photo" onclick="event.stopPropagation();bfSlide('${p.id}',-1)" class="hidden group-hover:flex absolute left-1.5 top-1/2 -translate-y-1/2 z-10 h-7 w-7 rounded-full glass items-center justify-center text-base leading-none" style="color:var(--brand)">‹</button>
        <button type="button" aria-label="Next photo" onclick="event.stopPropagation();bfSlide('${p.id}',1)" class="hidden group-hover:flex absolute right-1.5 top-1/2 -translate-y-1/2 z-10 h-7 w-7 rounded-full glass items-center justify-center text-base leading-none" style="color:var(--brand)">›</button>`
-    : `<div class="pcard-img w-full h-full">${imgs[0] ? `<img src="${imgs[0]}" alt="${alt}" loading="lazy" class="w-full h-full object-cover photo-crop">` : motif(p.category, 'p'+p.id)}</div>`;
+    : `<div class="pcard-img w-full h-full cursor-pointer" onclick="openProduct('${p.id}')">${imgs[0] ? `<img src="${imgs[0]}" alt="${alt}" loading="lazy" class="w-full h-full object-cover photo-crop">` : motif(p.category, 'p'+p.id)}</div>`;
   return `
   <div class="pcard reveal tilt group rounded-2xl overflow-hidden depth-1 hover:depth-3 flex flex-col" style="background:var(--card);animation-delay:${i*60}ms">
     <div class="relative overflow-hidden aspect-square">
@@ -1684,7 +1707,7 @@ function ProductCard(p, i = 0) {
     </div>
     <div class="p-4 flex flex-col gap-1 flex-1">
       <span class="text-[11px] uppercase tracking-wide" style="color:var(--sand)">${p.category}</span>
-      <h4 class="font-display text-[15px] font-semibold leading-tight" style="color:var(--ink)">${p.name}</h4>
+      <h4 onclick="openProduct('${p.id}')" class="font-display text-[15px] font-semibold leading-tight cursor-pointer hover:opacity-70 transition" style="color:var(--ink)">${p.name}</h4>
       ${hasSizes ? `
       <div class="flex flex-wrap items-center gap-1.5 pt-1.5">
         <span class="text-[11px] mr-0.5" style="color:var(--sand)">Size:</span>
@@ -1693,6 +1716,60 @@ function ProductCard(p, i = 0) {
       <div class="mt-auto pt-2 flex items-center gap-2">
         <span class="font-semibold" style="color:var(--brand)">${price(p.price)}</span>
         ${p.oldPrice && p.oldPrice > p.price ? `<span class="text-xs line-through" style="color:var(--sand)">${price(p.oldPrice)}</span>` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
+function ProductModal() {
+  const p = S.viewProduct && getProduct(S.viewProduct);
+  if (!p) return '';
+  const imgs = productImages(p);
+  const idx = Math.min(S.viewImg || 0, Math.max(0, imgs.length - 1));
+  const cur = imgs[idx];
+  const hasSizes = Array.isArray(p.sizes) && p.sizes.length > 0;
+  const sel = hasSizes ? ((S.pickSize && S.pickSize[p.id]) || '') : '';
+  const needsSize = hasSizes && !sel;
+  const inCart = S.cart.find(c => c.id === p.id);
+  return `
+  <div class="fixed inset-0 z-[130] flex items-center justify-center p-3 sm:p-5" onclick="if(event.target===this||event.target.classList.contains('bf-modal-bg'))closeProduct()">
+    <div class="bf-modal-bg absolute inset-0 bg-black/55"></div>
+    <div class="relative w-full max-w-3xl max-h-[92vh] overflow-y-auto rounded-2xl depth-3 bf-media" style="background:#fff">
+      <button onclick="closeProduct()" aria-label="Close" class="absolute right-3 top-3 z-20 h-9 w-9 rounded-full glass flex items-center justify-center" style="color:var(--ink)">${I.x}</button>
+      <div class="grid md:grid-cols-2">
+        <div class="relative select-none" style="background:var(--card)">
+          <div class="aspect-square overflow-hidden">
+            ${cur ? `<img src="${cur}" alt="${p.name} — handmade beaded ${p.category.toLowerCase()} by Beaded Finery" class="w-full h-full object-cover photo-crop">` : motif(p.category, 'vm' + p.id)}
+          </div>
+          ${imgs.length > 1 ? `
+            <button onclick="modalImg(${idx - 1})" aria-label="Previous" class="absolute left-2 top-1/2 -translate-y-1/2 z-10 h-9 w-9 rounded-full glass flex items-center justify-center text-lg leading-none" style="color:var(--brand)">‹</button>
+            <button onclick="modalImg(${idx + 1})" aria-label="Next" class="absolute right-2 top-1/2 -translate-y-1/2 z-10 h-9 w-9 rounded-full glass flex items-center justify-center text-lg leading-none" style="color:var(--brand)">›</button>
+            <div class="absolute inset-x-0 bottom-2 flex justify-center gap-1.5">
+              ${imgs.map((_, di) => `<button onclick="setModalImg(${di})" aria-label="Photo ${di + 1}" class="h-1.5 rounded-full transition-all" style="width:${di === idx ? '18px' : '6px'};background:${di === idx ? 'var(--brand)' : '#fff'};box-shadow:0 0 3px rgba(0,0,0,.45)"></button>`).join('')}
+            </div>` : ''}
+        </div>
+        <div class="p-6 sm:p-7 flex flex-col">
+          <span class="text-[11px] uppercase tracking-wide" style="color:var(--sand)">${p.category}</span>
+          <h3 class="font-display text-2xl font-bold mt-1 leading-tight" style="color:var(--brand)">${p.name}</h3>
+          <div class="flex items-center gap-2 mt-2 flex-wrap">
+            <span class="text-xl font-semibold" style="color:var(--ink)">${price(p.price)}</span>
+            ${p.oldPrice && p.oldPrice > p.price ? `<span class="text-sm line-through" style="color:var(--sand)">${price(p.oldPrice)}</span>` : ''}
+            ${!p.stock ? `<span class="text-[11px] font-semibold rounded-full px-2 py-0.5 text-white" style="background:var(--err)">Sold out</span>` : ''}
+          </div>
+          ${p.desc ? `<p class="text-sm mt-4 leading-relaxed" style="color:var(--ink)">${p.desc}</p>` : ''}
+          ${hasSizes ? `
+          <div class="mt-5">
+            <p class="text-xs font-semibold uppercase tracking-wide mb-2" style="color:var(--sand)">Choose your size</p>
+            <div class="flex flex-wrap gap-2">
+              ${p.sizes.map(sz => `<button onclick="pickCardSize('${p.id}',${JSON.stringify(sz)})" class="px-3.5 py-1.5 rounded-full text-sm font-medium transition" style="border:1.5px solid ${sel === sz ? 'var(--brand)' : 'var(--line)'};background:${sel === sz ? 'var(--brand)' : '#fff'};color:${sel === sz ? '#fff' : 'var(--ink)'}">${sz}</button>`).join('')}
+            </div>
+          </div>` : ''}
+          <div class="mt-6 flex gap-3">
+            <button onclick="addToCart('${p.id}', ${JSON.stringify(sel)})" ${(!p.stock || needsSize) ? 'disabled' : ''} class="btn btn-primary flex-1 py-3 text-sm"><span class="btn-label">${!p.stock ? 'Unavailable' : needsSize ? 'Choose a size first' : inCart ? 'Add another' : 'Add to Cart'}</span></button>
+            <button onclick="toggleWishlist('${p.id}')" aria-label="${inWishlist(p.id) ? 'Remove from wishlist' : 'Save to wishlist'}" class="btn btn-ghost px-4 py-3" style="color:${inWishlist(p.id) ? 'var(--err)' : 'var(--brand)'}">${inWishlist(p.id) ? I.heartFill : I.heart}</button>
+          </div>
+          <p class="text-[11px] mt-3" style="color:var(--sand)">Handmade to order · flat Rs. 300 delivery in Pakistan, free over Rs. 3,000</p>
+        </div>
       </div>
     </div>
   </div>`;
@@ -2199,13 +2276,13 @@ function WishlistDrawer() {
       <div class="flex-1 overflow-y-auto p-5 space-y-4">
         ${items.length ? items.map(p => `
           <div class="flex gap-3 rounded-xl p-3 depth-1" style="background:#fff">
-            <div class="h-20 w-20 rounded-lg overflow-hidden shrink-0">${p.img ? `<img src="${p.img}" alt="${p.name}" class="w-full h-full object-cover photo-crop">` : motif(p.category,'wl'+p.id)}</div>
+            <div onclick="openWishlist(false);openProduct('${p.id}')" class="h-20 w-20 rounded-lg overflow-hidden shrink-0 cursor-pointer">${p.img ? `<img src="${p.img}" alt="${p.name}" class="w-full h-full object-cover photo-crop">` : motif(p.category,'wl'+p.id)}</div>
             <div class="flex-1 min-w-0">
-              <p class="font-display text-sm font-semibold truncate" style="color:var(--ink)">${p.name}</p>
+              <p onclick="openWishlist(false);openProduct('${p.id}')" class="font-display text-sm font-semibold truncate cursor-pointer" style="color:var(--ink)">${p.name}</p>
               <p class="text-xs" style="color:var(--sand)">${p.category}</p>
               <p class="text-sm font-semibold mt-0.5" style="color:var(--brand)">${price(p.price)}</p>
               <div class="flex items-center gap-2 mt-2">
-                <button onclick="addToCart('${p.id}')" ${!p.stock?'disabled':''} class="btn ${p.stock?'btn-primary':'btn-ghost'} px-3 py-1.5 text-xs"><span class="btn-label">${p.stock ? 'Add to cart' : 'Sold out'}</span></button>
+                <button onclick="${p.sizes && p.sizes.length ? `openWishlist(false);openProduct('${p.id}')` : `addToCart('${p.id}')`}" ${!p.stock?'disabled':''} class="btn ${p.stock?'btn-primary':'btn-ghost'} px-3 py-1.5 text-xs"><span class="btn-label">${!p.stock ? 'Sold out' : (p.sizes && p.sizes.length ? 'Choose size' : 'Add to cart')}</span></button>
                 <button onclick="toggleWishlist('${p.id}')" class="ml-auto p-1.5 rounded-lg hover:bg-black/5" style="color:var(--err)">${I.trash}</button>
               </div>
             </div>
@@ -2234,7 +2311,7 @@ function SearchResultsInner() {
   if (!res.length) return `<p class="text-sm text-center py-10" style="color:var(--sand)">No matches for “${q}”. Try “earrings”, “sets”, “anklet”…</p>`;
   return `<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
     ${res.map(p => `
-      <button onclick="openSearch(false);setCategory('${p.category}')" class="text-left rounded-xl overflow-hidden depth-1 hover:depth-2 transition" style="background:#fff">
+      <button onclick="openSearch(false);openProduct('${p.id}')" class="text-left rounded-xl overflow-hidden depth-1 hover:depth-2 transition" style="background:#fff">
         <div class="aspect-square overflow-hidden">${p.img ? `<img src="${p.img}" alt="${p.name}" class="w-full h-full object-cover photo-crop">` : motif(p.category,'sr'+p.id)}</div>
         <div class="p-2.5">
           <p class="text-[13px] font-semibold leading-tight truncate" style="color:var(--ink)">${p.name}</p>
@@ -2698,6 +2775,8 @@ S.demoPick = [];
 S.demoUndo = [];
 S.checkoutCountry = '';
 S.pickSize = {};
+S.viewProduct = null;
+S.viewImg = 0;
 S.cartOpen = S.wishlistOpen = S.searchOpen = false;
 S.searchQuery = '';
 if (!Array.isArray(S.wishlist)) S.wishlist = [];
@@ -2737,6 +2816,17 @@ try {
   S.checkoutStep = 3;
   if (checkId) setTimeout(() => toast("We're confirming your payment — you'll get an email shortly", 'ok'), 300);
 })();
+
+// deter casual image saving; close the product preview on Escape
+document.addEventListener('contextmenu', (e) => {
+  if (e.target.closest('img, picture, .bf-media, .pcard, .card-slider')) e.preventDefault();
+}, { capture: true });
+document.addEventListener('dragstart', (e) => {
+  if (e.target && e.target.tagName === 'IMG') e.preventDefault();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && S.viewProduct) closeProduct();
+});
 
 render();
 if (wantsAdmin) enterAdmin({ fromUrl: true });
