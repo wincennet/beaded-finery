@@ -1700,7 +1700,7 @@ function ProductCard(p, i = 0) {
       </button>
       ${!p.stock ? `<span class="absolute left-3 bottom-3 z-10 rounded-full px-2.5 py-1 text-[10px] font-semibold text-white" style="background:var(--err)">Sold out</span>` : ''}
       <div class="quick-add absolute inset-x-3 bottom-3 z-10">
-        <button onclick="addToCart('${p.id}', ${JSON.stringify(selSize)})" ${(!p.stock || needsSize) ? 'disabled' : ''} class="btn ${inCart && !needsSize ? 'btn-ghost bg-white' : 'btn-primary'} w-full py-2.5 text-xs">
+        <button onclick="addToCart('${p.id}','${selSize}')" ${(!p.stock || needsSize) ? 'disabled' : ''} class="btn ${inCart && !needsSize ? 'btn-ghost bg-white' : 'btn-primary'} w-full py-2.5 text-xs">
           <span class="btn-label">${!p.stock ? 'Unavailable' : needsSize ? 'Choose a size below' : inCart ? `In cart (${inCart.qty}) · add more` : 'Add to Cart'}</span>
         </button>
       </div>
@@ -1711,7 +1711,7 @@ function ProductCard(p, i = 0) {
       ${hasSizes ? `
       <div class="flex flex-wrap items-center gap-1.5 pt-1.5">
         <span class="text-[11px] mr-0.5" style="color:var(--sand)">Size:</span>
-        ${p.sizes.map(sz => `<button type="button" onclick="event.stopPropagation();pickCardSize('${p.id}',${JSON.stringify(sz)})" class="px-2 py-0.5 rounded-full text-[11px] font-medium transition" style="border:1px solid ${selSize===sz?'var(--brand)':'var(--line)'};background:${selSize===sz?'var(--brand)':'#fff'};color:${selSize===sz?'#fff':'var(--ink)'}">${sz}</button>`).join('')}
+        ${p.sizes.map(sz => `<button type="button" onclick="event.stopPropagation();pickCardSize('${p.id}','${sz}')" class="px-2 py-0.5 rounded-full text-[11px] font-medium transition" style="border:1px solid ${selSize===sz?'var(--brand)':'var(--line)'};background:${selSize===sz?'var(--brand)':'#fff'};color:${selSize===sz?'#fff':'var(--ink)'}">${sz}</button>`).join('')}
       </div>` : ''}
       <div class="mt-auto pt-2 flex items-center gap-2">
         <span class="font-semibold" style="color:var(--brand)">${price(p.price)}</span>
@@ -1761,11 +1761,11 @@ function ProductModal() {
           <div class="mt-5">
             <p class="text-xs font-semibold uppercase tracking-wide mb-2" style="color:var(--sand)">Choose your size</p>
             <div class="flex flex-wrap gap-2">
-              ${p.sizes.map(sz => `<button onclick="pickCardSize('${p.id}',${JSON.stringify(sz)})" class="px-3.5 py-1.5 rounded-full text-sm font-medium transition" style="border:1.5px solid ${sel === sz ? 'var(--brand)' : 'var(--line)'};background:${sel === sz ? 'var(--brand)' : '#fff'};color:${sel === sz ? '#fff' : 'var(--ink)'}">${sz}</button>`).join('')}
+              ${p.sizes.map(sz => `<button onclick="pickCardSize('${p.id}','${sz}')" class="px-3.5 py-1.5 rounded-full text-sm font-medium transition" style="border:1.5px solid ${sel === sz ? 'var(--brand)' : 'var(--line)'};background:${sel === sz ? 'var(--brand)' : '#fff'};color:${sel === sz ? '#fff' : 'var(--ink)'}">${sz}</button>`).join('')}
             </div>
           </div>` : ''}
           <div class="mt-6 flex gap-3">
-            <button onclick="addToCart('${p.id}', ${JSON.stringify(sel)})" ${(!p.stock || needsSize) ? 'disabled' : ''} class="btn btn-primary flex-1 py-3 text-sm"><span class="btn-label">${!p.stock ? 'Unavailable' : needsSize ? 'Choose a size first' : inCart ? 'Add another' : 'Add to Cart'}</span></button>
+            <button onclick="addToCart('${p.id}','${sel}')" ${(!p.stock || needsSize) ? 'disabled' : ''} class="btn btn-primary flex-1 py-3 text-sm"><span class="btn-label">${!p.stock ? 'Unavailable' : needsSize ? 'Choose a size first' : inCart ? 'Add another' : 'Add to Cart'}</span></button>
             <button onclick="toggleWishlist('${p.id}')" aria-label="${inWishlist(p.id) ? 'Remove from wishlist' : 'Save to wishlist'}" class="btn btn-ghost px-4 py-3" style="color:${inWishlist(p.id) ? 'var(--err)' : 'var(--brand)'}">${inWishlist(p.id) ? I.heartFill : I.heart}</button>
           </div>
           <p class="text-[11px] mt-3" style="color:var(--sand)">Handmade to order · flat Rs. 300 delivery in Pakistan, free over Rs. 3,000</p>
