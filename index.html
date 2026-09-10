@@ -446,10 +446,10 @@ const IG = n => `/images/instagram/ig${n}.jpg`;
 const SEED_PRODUCTS = [
   { name: 'Gulnaar Beaded Bangle', category: 'Bangles', price: 1250, oldPrice: 1550, stock: true, bestSeller: true, newArrival: false, tag: 'Bridal', desc: 'A hand-set beaded bangle in plum and champagne crystal tones.' },
   { name: 'Noor Bangle Pair', category: 'Bangles', price: 1800, stock: true, bestSeller: false, newArrival: true, desc: 'Matched pair of beaded bangles with hand-wrapped detailing.' },
-  { name: 'Daisy Beaded Bracelet', category: 'Bracelets', price: 1250, stock: true, bestSeller: true, newArrival: false, desc: 'Delicate daisy beadwork on a gold-tone chain — an everyday favourite.' },
-  { name: 'Rosette Charm Bracelet', category: 'Bracelets', price: 1350, oldPrice: 1600, stock: false, bestSeller: false, newArrival: true, desc: 'Layered charm bracelet with hand-beaded rosettes.' },
+  { name: 'Daisy Beaded Bracelet', category: 'Bracelets', price: 1250, stock: true, bestSeller: true, newArrival: false, sizes: ['S', 'M', 'L'], desc: 'Delicate daisy beadwork on a gold-tone chain — an everyday favourite.' },
+  { name: 'Rosette Charm Bracelet', category: 'Bracelets', price: 1350, oldPrice: 1600, stock: false, bestSeller: false, newArrival: true, sizes: ['S', 'M', 'L'], desc: 'Layered charm bracelet with hand-beaded rosettes.' },
   { name: 'Beaded Blossom Ring', category: 'Rings/Ringlets', price: 900, stock: true, bestSeller: true, newArrival: true, desc: 'Adjustable ring with a hand-beaded flower at the centre.' },
-  { name: 'Stackable Ringlet Trio', category: 'Rings/Ringlets', price: 1100, stock: true, bestSeller: false, newArrival: false, desc: 'Set of three fine ringlets with tiny beaded crowns.' },
+  { name: 'Stackable Ringlet Trio', category: 'Rings/Ringlets', price: 1100, stock: true, bestSeller: false, newArrival: false, sizes: ['6', '7', '8', '9'], desc: 'Set of three fine ringlets with tiny beaded crowns.' },
   { name: 'Champagne Jhumka Earrings', category: 'Earrings', price: 1450, img: IG(1), stock: true, bestSeller: true, newArrival: false, tag: 'Bestseller', desc: 'Hand-beaded champagne jhumkas that catch the light beautifully.' },
   { name: 'Sahara Jhumka Earrings', category: 'Earrings', price: 1300, img: IG(2), stock: true, bestSeller: false, newArrival: true, desc: 'Pink and gold sahara-style jhumkas for desi looks.' },
   { name: 'Pastel Bali Hoops', category: 'Earrings', price: 1250, img: IG(5), stock: true, bestSeller: true, newArrival: false, desc: 'Lightweight beaded bali hoops in soft pastel crystals.' },
@@ -458,7 +458,7 @@ const SEED_PRODUCTS = [
   { name: 'Magenta Floral Anklet', category: 'Anklets', price: 950, img: IG(4), stock: true, bestSeller: true, newArrival: true, desc: 'Bright floral beadwork anklet — new contrast, new vibe.' },
   { name: 'Pastel Charm Anklet', category: 'Anklets', price: 850, stock: false, bestSeller: false, newArrival: true, desc: 'Waterproof-thread anklet with pastel glass beads.' },
   { name: 'Steel Serenity Pendant', category: 'Stainless steel jewelry', price: 1550, stock: true, bestSeller: true, newArrival: false, tag: 'Tarnish-free', desc: 'Hypoallergenic stainless steel pendant on a box chain.' },
-  { name: 'Steel Rope Bracelet', category: 'Stainless steel jewelry', price: 1400, oldPrice: 1700, stock: true, bestSeller: false, newArrival: true, desc: 'Water-safe stainless steel bracelet, everyday durable.' },
+  { name: 'Steel Rope Bracelet', category: 'Stainless steel jewelry', price: 1400, oldPrice: 1700, stock: true, bestSeller: false, newArrival: true, sizes: ['18cm', '19cm', '20cm'], desc: 'Water-safe stainless steel bracelet, everyday durable.' },
   { name: 'Blush Beaded Set', category: 'Sets', price: 3600, oldPrice: 4200, img: IG(8), stock: true, bestSeller: true, newArrival: true, tag: 'Complete look', desc: 'Necklace, earrings & bracelet — a full coordinated beaded set.' },
   { name: 'Floral Aesthetic Set', category: 'Sets', price: 3200, img: IG(6), stock: true, bestSeller: false, newArrival: true, desc: 'Coordinated floral beadwork set in pink and orange.' },
   { name: 'Dulhan Bridal Set', category: 'Sets', price: 5200, stock: true, bestSeller: false, newArrival: false, desc: 'Statement bridal set with matching maang tikka.' },
@@ -496,6 +496,7 @@ const DEFAULT_STATE = {
   shipping: { name:'', phone:'', email:'', address:'', city:'', postal:'', notes:'' },
   paymentMethod: 'Credit / Debit Card',
   cardPay: { enabled: false, env: 'sandbox' },
+  pickSize: {},
   products: null,
   orders: [],
   reviews: [],              // approved customer feedback (from server)
@@ -538,7 +539,9 @@ function seedOrders() {
 /*  DERIVED                                                              */
 /* ==================================================================== */
 const getProduct = id => S.products.find(p => p.id === id);
-const cartDetailed = () => S.cart.map(c => ({ ...c, p: getProduct(c.id) })).filter(c => c.p);
+const cartKey = c => c.id + '|' + (c.size || '');
+const cartLineOf = (id, size) => S.cart.find(c => c.id === id && (c.size || '') === (size || ''));
+const cartDetailed = () => S.cart.map(c => ({ ...c, key: cartKey(c), p: getProduct(c.id) })).filter(c => c.p);
 const cartCount = () => S.cart.reduce((s, c) => s + c.qty, 0);
 const cartSubtotal = () => cartDetailed().reduce((s, c) => s + c.p.price * c.qty, 0);
 const cartBlocked = () => shipCost(cartSubtotal()) === null;
@@ -548,18 +551,36 @@ const cartTotal = () => (S.cart.length ? cartSubtotal() + cartShipping() : 0);
 /* ==================================================================== */
 /*  ACTIONS                                                              */
 /* ==================================================================== */
-function addToCart(id) {
+function addToCart(id, size = '') {
   const p = getProduct(id);
   if (!p || !p.stock) { toast('Out of stock', 'err'); return; }
-  const line = S.cart.find(c => c.id === id);
-  if (line) line.qty++; else S.cart.push({ id, qty: 1 });
-  save(); render(); toast(`${p.name} added`, 'ok');
+  if (p.sizes && p.sizes.length) {
+    if (!size || !p.sizes.includes(size)) size = p.sizes[0];   // wishlist / fallback
+  } else { size = ''; }
+  const line = cartLineOf(id, size);
+  if (line) line.qty++; else S.cart.push(size ? { id, qty: 1, size } : { id, qty: 1 });
+  save(); render(); toast(`${p.name}${size ? ' · ' + size : ''} added`, 'ok');
   pulseCart();
 }
-function setQty(id, qty) {
+function pickCardSize(id, size) { S.pickSize = S.pickSize || {}; S.pickSize[id] = size; save(); render(); }
+function setQty(key, qty) {
   qty = Math.max(0, qty);
-  if (qty === 0) S.cart = S.cart.filter(c => c.id !== id);
-  else { const l = S.cart.find(c => c.id === id); if (l) l.qty = qty; }
+  const cut = key.indexOf('|');
+  const id = cut === -1 ? key : key.slice(0, cut);
+  const size = cut === -1 ? '' : key.slice(cut + 1);
+  if (qty === 0) S.cart = S.cart.filter(c => !(c.id === id && (c.size || '') === size));
+  else { const l = cartLineOf(id, size); if (l) l.qty = qty; }
+  save(); render();
+}
+function changeCartSize(key, newSize) {
+  const cut = key.indexOf('|');
+  const id = cut === -1 ? key : key.slice(0, cut);
+  const size = cut === -1 ? '' : key.slice(cut + 1);
+  const line = cartLineOf(id, size);
+  if (!line || (line.size || '') === newSize) return;
+  const merge = S.cart.find(c => c !== line && c.id === id && (c.size || '') === newSize);
+  if (merge) { merge.qty += line.qty; S.cart = S.cart.filter(c => c !== line); }
+  else line.size = newSize;
   save(); render();
 }
 function clearCart() { S.cart = []; save(); render(); }
@@ -581,7 +602,12 @@ function toggleWishlist(id) {
   save(); render();
 }
 function wishlistToCart() {
-  S.wishlist.forEach(id => { const p = getProduct(id); if (p && p.stock && !S.cart.find(c => c.id === id)) S.cart.push({ id, qty: 1 }); });
+  S.wishlist.forEach(id => {
+    const p = getProduct(id);
+    if (!p || !p.stock) return;
+    const size = (p.sizes && p.sizes.length) ? p.sizes[0] : '';
+    if (!cartLineOf(id, size)) S.cart.push(size ? { id, qty: 1, size } : { id, qty: 1 });
+  });
   save(); render(); toast('Wishlist moved to cart', 'ok');
 }
 
@@ -711,7 +737,7 @@ async function placeOrder(btn) {
   const cc = shipCountry();
   if (shipBlocked(cc)) { toast(`We don't deliver to ${countryName(cc)} yet`, 'err'); return; }
   btn.classList.add('loading');
-  const items = cartDetailed().map(c => ({ name: c.p.name, qty: c.qty, price: c.p.price }));
+  const items = cartDetailed().map(c => c.size ? { name: c.p.name, qty: c.qty, price: c.p.price, size: c.size } : { name: c.p.name, qty: c.qty, price: c.p.price });
   const sub = cartSubtotal();
   const ship = shipCost(sub, cc) || 0;
   const order = {
@@ -1224,6 +1250,7 @@ function adminUpsert(form) {
     bestSeller: !!data.bestSeller,
     newArrival: !!data.newArrival,
     desc: data.desc?.trim() || '',
+    sizes: (data.sizes || '').split(',').map(s => s.replace(/[|"']/g, '').trim()).filter(Boolean).slice(0, 24),
     images: S.editImgs.slice(),
     img: (S.editImgs[0] || S.editImg || data.img || '').trim() || null,
   };
@@ -1343,7 +1370,7 @@ const I = {
   chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-5 h-5"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg>',
   box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-5 h-5"><path d="M3 8l9-5 9 5-9 5-9-5Zm0 0v8l9 5 9-5V8"/></svg>',
   insta: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-5 h-5"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17" cy="7" r="1" fill="currentColor"/></svg>',
-tiktok: '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M16 3c.3 2.2 1.6 3.9 3.9 4.2v2.6c-1.4.1-2.7-.3-3.9-1v6.6c0 3.6-2.6 5.9-5.8 5.9C7 27.3 4.5 25 4.5 21.5c0-3.3 2.6-5.7 6-5.5v2.7c-.5-.1-1-.2-1.5-.1-1.4.2-2.4 1.3-2.3 2.8.1 1.4 1.3 2.5 2.7 2.4 1.5-.1 2.4-1.2 2.4-2.8V3H16Z"/></svg>',
+tiktok: '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"><path d="M12.53.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/></svg>',
 whatsapp: '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2Zm5.8 14.2c-.2.6-1.2 1.2-1.7 1.2-.4 0-1 .1-3.2-.9-2.7-1.2-4.4-4-4.5-4.2-.1-.2-1-1.4-1-2.6s.6-1.8.9-2.1c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 2c.1.2.1.4 0 .5l-.4.5c-.1.2-.3.3-.1.6.1.3.7 1.1 1.4 1.7 1 .8 1.7 1.1 2 1.2.2.1.4.1.5-.1l.7-.8c.2-.2.3-.2.6-.1l1.9.9c.3.1.5.2.6.3.1.2.1.7-.1 1.3Z"/></svg>',
 youtube: '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M23 12s0-3.5-.4-5.2a3 3 0 0 0-2.1-2.1C18.7 4.3 12 4.3 12 4.3s-6.7 0-8.5.4A3 3 0 0 0 1.4 6.8C1 8.5 1 12 1 12s0 3.5.4 5.2a3 3 0 0 0 2.1 2.1c1.8.4 8.5.4 8.5.4s6.7 0 8.5-.4a3 3 0 0 0 2.1-2.1C23 15.5 23 12 23 12ZM9.8 15.3V8.7l5.7 3.3-5.7 3.3Z"/></svg>',
 star: '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="m12 2 3 6.5 7 .9-5 4.9 1.2 7L12 18l-6.4 3.3L7 14.3 2 9.4l7-.9L12 2Z"/></svg>',
@@ -1623,6 +1650,9 @@ function Showcase(id, title, list) {
 
 function ProductCard(p, i = 0) {
   const inCart = S.cart.find(c => c.id === p.id);
+  const hasSizes = Array.isArray(p.sizes) && p.sizes.length > 0;
+  const selSize = hasSizes ? ((S.pickSize && S.pickSize[p.id]) || '') : '';
+  const needsSize = hasSizes && !selSize;
   const imgs = productImages(p);
   const alt = `${p.name} — handmade beaded ${p.category.toLowerCase()} by Beaded Finery`;
   const media = imgs.length > 1
@@ -1647,14 +1677,19 @@ function ProductCard(p, i = 0) {
       </button>
       ${!p.stock ? `<span class="absolute left-3 bottom-3 z-10 rounded-full px-2.5 py-1 text-[10px] font-semibold text-white" style="background:var(--err)">Sold out</span>` : ''}
       <div class="quick-add absolute inset-x-3 bottom-3 z-10">
-        <button onclick="addToCart('${p.id}')" ${!p.stock?'disabled':''} class="btn ${inCart?'btn-ghost bg-white':'btn-primary'} w-full py-2.5 text-xs">
-          <span class="btn-label">${!p.stock ? 'Unavailable' : inCart ? `In cart (${inCart.qty}) · add more` : 'Add to Cart'}</span>
+        <button onclick="addToCart('${p.id}', ${JSON.stringify(selSize)})" ${(!p.stock || needsSize) ? 'disabled' : ''} class="btn ${inCart && !needsSize ? 'btn-ghost bg-white' : 'btn-primary'} w-full py-2.5 text-xs">
+          <span class="btn-label">${!p.stock ? 'Unavailable' : needsSize ? 'Choose a size below' : inCart ? `In cart (${inCart.qty}) · add more` : 'Add to Cart'}</span>
         </button>
       </div>
     </div>
     <div class="p-4 flex flex-col gap-1 flex-1">
       <span class="text-[11px] uppercase tracking-wide" style="color:var(--sand)">${p.category}</span>
       <h4 class="font-display text-[15px] font-semibold leading-tight" style="color:var(--ink)">${p.name}</h4>
+      ${hasSizes ? `
+      <div class="flex flex-wrap items-center gap-1.5 pt-1.5">
+        <span class="text-[11px] mr-0.5" style="color:var(--sand)">Size:</span>
+        ${p.sizes.map(sz => `<button type="button" onclick="event.stopPropagation();pickCardSize('${p.id}',${JSON.stringify(sz)})" class="px-2 py-0.5 rounded-full text-[11px] font-medium transition" style="border:1px solid ${selSize===sz?'var(--brand)':'var(--line)'};background:${selSize===sz?'var(--brand)':'#fff'};color:${selSize===sz?'#fff':'var(--ink)'}">${sz}</button>`).join('')}
+      </div>` : ''}
       <div class="mt-auto pt-2 flex items-center gap-2">
         <span class="font-semibold" style="color:var(--brand)">${price(p.price)}</span>
         ${p.oldPrice && p.oldPrice > p.price ? `<span class="text-xs line-through" style="color:var(--sand)">${price(p.oldPrice)}</span>` : ''}
@@ -1891,13 +1926,13 @@ function orderSummaryCard() {
   const lines = cartDetailed();
   if (!lines.length && !S.lastOrder) return '';
   const useLast = !lines.length && S.lastOrder;
-  const items = useLast ? S.lastOrder.items.map(i => ({ name:i.name, qty:i.qty, price:i.price })) : lines.map(c => ({ name:c.p.name, qty:c.qty, price:c.p.price }));
+  const items = useLast ? S.lastOrder.items.map(i => ({ name:i.name, qty:i.qty, price:i.price, size:i.size })) : lines.map(c => ({ name:c.p.name, qty:c.qty, price:c.p.price, size:c.size }));
   const sub = items.reduce((s,i)=>s+i.price*i.qty,0);
   return `
   <div class="rounded-2xl p-5 mb-6 depth-1" style="background:var(--card)">
     <p class="font-display font-semibold mb-3" style="color:var(--brand)">Order Summary</p>
     <div class="space-y-2 text-sm" style="color:var(--ink)">
-      ${items.map(i => `<div class="flex justify-between gap-2"><span>${i.name} × ${i.qty}</span><span>${price(i.price*i.qty)}</span></div>`).join('')}
+      ${items.map(i => `<div class="flex justify-between gap-2"><span>${i.name}${i.size ? ` <span style="color:var(--sand)">(${i.size})</span>` : ''} × ${i.qty}</span><span>${price(i.price*i.qty)}</span></div>`).join('')}
       <div class="h-px my-2" style="background:var(--line)"></div>
       <div class="flex justify-between"><span>Subtotal</span><span>${price(sub)}</span></div>
       ${shipCost(sub) === null
@@ -2111,12 +2146,18 @@ function CartDrawer() {
             <div class="flex-1 min-w-0">
               <p class="font-display text-sm font-semibold truncate" style="color:var(--ink)">${c.p.name}</p>
               <p class="text-xs" style="color:var(--sand)">${c.p.category}</p>
+              ${c.p.sizes && c.p.sizes.length ? `
+              <label class="text-xs flex items-center gap-1.5 mt-1" style="color:var(--sand)">Size
+                <select onchange="changeCartSize('${c.key}',this.value)" class="rounded px-1.5 py-0.5 text-xs" style="border:1px solid var(--line);color:var(--ink);background:#fff">
+                  ${c.p.sizes.map(sz => `<option ${(c.size||'')===sz?'selected':''}>${sz}</option>`).join('')}
+                </select>
+              </label>` : (c.size ? `<p class="text-xs mt-0.5" style="color:var(--sand)">Size: <strong style="color:var(--ink)">${c.size}</strong></p>` : '')}
               <p class="text-sm font-semibold mt-0.5" style="color:var(--brand)">${price(c.p.price)}</p>
               <div class="flex items-center gap-2 mt-2">
-                <button onclick="setQty('${c.id}',${c.qty - 1})" class="h-7 w-7 rounded-full flex items-center justify-center" style="background:var(--card);color:var(--ink)">${I.minus}</button>
+                <button onclick="setQty('${c.key}',${c.qty - 1})" class="h-7 w-7 rounded-full flex items-center justify-center" style="background:var(--card);color:var(--ink)">${I.minus}</button>
                 <span class="w-6 text-center text-sm font-medium">${c.qty}</span>
-                <button onclick="setQty('${c.id}',${c.qty + 1})" class="h-7 w-7 rounded-full flex items-center justify-center" style="background:var(--card);color:var(--ink)">${I.plus}</button>
-                <button onclick="setQty('${c.id}',0)" class="ml-auto p-1.5 rounded-lg hover:bg-black/5" style="color:var(--err)">${I.trash}</button>
+                <button onclick="setQty('${c.key}',${c.qty + 1})" class="h-7 w-7 rounded-full flex items-center justify-center" style="background:var(--card);color:var(--ink)">${I.plus}</button>
+                <button onclick="setQty('${c.key}',0)" class="ml-auto p-1.5 rounded-lg hover:bg-black/5" style="color:var(--err)">${I.trash}</button>
               </div>
             </div>
           </div>`).join('') : `
@@ -2335,6 +2376,9 @@ function AdminProducts() {
           </div>
           <label class="block"><span class="text-xs font-medium mb-1 block" style="color:var(--ink)">Description</span>
             <textarea name="desc" rows="2" class="field" placeholder="Short product description">${editing?.desc || ''}</textarea></label>
+          <label class="block"><span class="text-xs font-medium mb-1 block" style="color:var(--ink)">Sizes <span style="color:var(--sand)">(optional — separate with commas)</span></span>
+            <input name="sizes" class="field" value="${(editing?.sizes || []).join(', ')}" placeholder="e.g. S, M, L   or   16cm, 17cm, 18cm">
+            <span class="text-[11px] mt-1 block" style="color:var(--sand)">Leave blank for one-size items. When set, customers must pick a size before adding to cart.</span></label>
           <div class="flex gap-4 text-sm py-1" style="color:var(--ink)">
             <label class="flex items-center gap-2"><input type="checkbox" name="bestSeller" ${editing?.bestSeller ? 'checked' : ''} class="accent-[var(--brand)] h-4 w-4"> Best seller</label>
             <label class="flex items-center gap-2"><input type="checkbox" name="newArrival" ${editing?.newArrival ? 'checked' : ''} class="accent-[var(--brand)] h-4 w-4"> New arrival</label>
@@ -2353,7 +2397,7 @@ function AdminProducts() {
           <div class="h-14 w-14 rounded-lg overflow-hidden shrink-0">${p.img ? `<img src="${p.img}" alt="${p.name}" class="w-full h-full object-cover photo-crop">` : motif(p.category, 'ap'+p.id)}</div>
           <div class="flex-1 min-w-0">
             <p class="font-display text-sm font-semibold truncate" style="color:var(--ink)">${p.name}</p>
-            <p class="text-xs" style="color:var(--sand)">${p.category} · ${money(p.price)}${p.oldPrice && p.oldPrice > p.price ? ` (was ${money(p.oldPrice)})` : ''}</p>
+            <p class="text-xs" style="color:var(--sand)">${p.category} · ${money(p.price)}${p.oldPrice && p.oldPrice > p.price ? ` (was ${money(p.oldPrice)})` : ''}${p.sizes && p.sizes.length ? ` · sizes: ${p.sizes.join('/')}` : ''}</p>
           </div>
           <button onclick="adminToggleStock('${p.id}')" class="text-[11px] font-semibold rounded-full px-3 py-1.5 text-white shrink-0" style="background:${p.stock ? 'var(--ok)' : 'var(--err)'}">
             ${p.stock ? 'In Stock' : 'Out of Stock'}
@@ -2394,7 +2438,7 @@ function AdminOrders() {
         </div>
 
         <div class="mt-3 rounded-lg p-3 text-sm space-y-1" style="background:var(--card);color:var(--ink)">
-          ${(o.items || []).map(i => `<div class="flex justify-between"><span>${i.name} × ${i.qty}</span><span>${money((i.price || 0) * (i.qty || 0))}</span></div>`).join('')}
+          ${(o.items || []).map(i => `<div class="flex justify-between"><span>${i.name}${i.size ? ` · ${i.size}` : ''} × ${i.qty}</span><span>${money((i.price || 0) * (i.qty || 0))}</span></div>`).join('')}
         </div>
 
         <div class="mt-4 flex flex-wrap items-center gap-2">
@@ -2653,6 +2697,7 @@ S.demoScan = null;
 S.demoPick = [];
 S.demoUndo = [];
 S.checkoutCountry = '';
+S.pickSize = {};
 S.cartOpen = S.wishlistOpen = S.searchOpen = false;
 S.searchQuery = '';
 if (!Array.isArray(S.wishlist)) S.wishlist = [];

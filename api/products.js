@@ -44,6 +44,10 @@ function clean(p) {
     tag: o.tag ? String(o.tag).slice(0, 30) : undefined,
   };
   if (o.oldPrice) out.oldPrice = Math.max(0, Math.round(Number(o.oldPrice)));
+  const sizes = Array.isArray(o.sizes)
+    ? [...new Set(o.sizes.map((s) => String(s || '').replace(/[|"']/g, '').trim().slice(0, 20)).filter(Boolean))].slice(0, 24)
+    : [];
+  if (sizes.length) out.sizes = sizes;
   // accept data:image URIs (compressed by the client) and normal http(s) URLs
   const okImg = (s) => s && (/^data:image\//.test(s) || /^https?:\/\//.test(s)) && s.length < 800000;
   let imgs = Array.isArray(o.images) ? o.images.map((x) => String(x || '')).filter(okImg) : [];

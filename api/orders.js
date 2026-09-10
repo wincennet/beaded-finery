@@ -41,11 +41,15 @@ const isOwner = (req) => {
 const sanitizeOrder = (raw) => {
   const o = raw && typeof raw === 'object' ? raw : {};
   const items = Array.isArray(o.items)
-    ? o.items.slice(0, 50).map((i) => ({
-        name: String(i.name || '').slice(0, 120),
-        qty: Math.max(1, Math.min(99, Number(i.qty) || 1)),
-        price: Math.max(0, Number(i.price) || 0),
-      }))
+    ? o.items.slice(0, 50).map((i) => {
+        const it = {
+          name: String(i.name || '').slice(0, 120),
+          qty: Math.max(1, Math.min(99, Number(i.qty) || 1)),
+          price: Math.max(0, Number(i.price) || 0),
+        };
+        if (i.size) it.size = String(i.size).slice(0, 40);
+        return it;
+      })
     : [];
   return {
     id: String(o.id || 'BF-' + Date.now().toString().slice(-7)).slice(0, 24),
