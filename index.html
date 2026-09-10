@@ -494,7 +494,8 @@ const DEFAULT_STATE = {
   wishlist: [],             // [productId]
   checkoutStep: 1,
   shipping: { name:'', phone:'', email:'', address:'', city:'', postal:'', notes:'' },
-  paymentMethod: 'Easypaisa',
+  paymentMethod: 'Credit / Debit Card',
+  cardPay: { enabled: false, env: 'sandbox' },
   products: null,
   orders: [],
   reviews: [],              // approved customer feedback (from server)
@@ -733,8 +734,29 @@ async function placeOrder(btn) {
   } catch (e) { /* offline / static hosting — keep local copy */ }
 
   S.orders.unshift(order);
-  S.cart = [];
   S.lastOrder = order;
+
+  // Card payment: hand off to Safepay's secure page. The order is already saved,
+  // so it shows in the admin panel whatever happens next.
+  if (order.method === CARD_METHOD && S.cardPay && S.cardPay.enabled) {
+    try {
+      const r = await fetch('/api/pay', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: order.id }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.url) { S.cart = []; save(); window.location.href = j.url; return; }
+      toast('Could not open the card page — pick Easypaisa, JazzCash or bank transfer', 'err');
+      btn.classList.remove('loading');
+      return;
+    } catch (e) {
+      toast('Could not open the card page — try another method', 'err');
+      btn.classList.remove('loading');
+      return;
+    }
+  }
+
+  S.cart = [];
   S.checkoutStep = 3;
   save(); render();
   btn.classList.remove('loading');
@@ -843,6 +865,18 @@ function setCurrency(cur) {
   // picking a currency also sets where we deliver to (customer can still change it at checkout)
   if (S.userCurrency && CUR_COUNTRY[S.userCurrency]) S.checkoutCountry = CUR_COUNTRY[S.userCurrency];
   save(); render();
+}
+
+/* ---- card payments (Safepay): is it switched on? ---- */
+async function loadPayConfig() {
+  try {
+    const res = await fetch('/api/pay', { cache: 'no-store' });
+    if (!res.ok) return;
+    const j = await res.json();
+    S.cardPay = { enabled: !!j.enabled, env: j.env || 'sandbox' };
+    if (!S.cardPay.enabled && S.paymentMethod === CARD_METHOD) S.paymentMethod = 'Easypaisa';
+    save(); render();
+  } catch (e) {}
 }
 
 /* ---- store settings (shipping rules) ---- */
@@ -1320,6 +1354,7 @@ const TIKTOK_URL = 'https://www.tiktok.com/@beadedfinery';
 const YT_URL = 'https://www.youtube.com/@beadedfinery';
 const EP_JC_NUMBER = '0334 4035732';
 const BANK = { name: 'Meezan Bank', title: 'MANAHAL AHMED', acc: '00300116083220', iban: 'PK21MEZN0000300116083220' };
+const CARD_METHOD = 'Credit / Debit Card';
 
 /* ==================================================================== */
 /*  RENDER                                                               */
@@ -1821,7 +1856,7 @@ function ShopPage() {
 
 /* ---------- CHECKOUT ---------- */
 function Checkout() {
-  const steps = ['Shipping Details', 'Payment', 'Payment Proof'];
+  const steps = ['Shipping Details', 'Payment', (S.lastOrder && S.lastOrder.paid) ? 'Confirmed' : 'Payment Proof'];
   return `
   <section class="max-w-3xl mx-auto px-4 sm:px-6 py-10 sm:py-16">
     <button onclick="goto('shop')" class="text-sm nav-link mb-6 inline-block" style="color:var(--brand)">← Continue shopping</button>
@@ -1943,13 +1978,18 @@ function bankDetailsCard() {
 }
 
 function CheckoutStep2() {
+  const cardOn = S.cardPay && S.cardPay.enabled;
   const methods = [
+    ...(cardOn ? [[CARD_METHOD, 'Visa, Mastercard & more — secure page by Safepay', '']] : []),
     ['Easypaisa', 'Manahal Ahmed', EP_JC_NUMBER],
     ['JazzCash', 'Manahal Ahmed', EP_JC_NUMBER],
     ['Bank Transfer', `${BANK.name} — ${BANK.title}`, ''],
   ];
+  if (!methods.some(m => m[0] === S.paymentMethod)) S.paymentMethod = methods[0][0];
   const sub = cartSubtotal();
   const ship = shipCost(sub);
+  const total = sub + (ship || 0);
+  const payLabel = S.paymentMethod === CARD_METHOD ? `Pay ${price(total)} securely` : 'Place Order';
   return `
   ${orderSummaryCard()}
   <div class="rounded-2xl p-6 sm:p-8 depth-1" style="background:#fff;border:1px solid var(--line)">
@@ -1965,7 +2005,7 @@ function CheckoutStep2() {
       <strong style="color:var(--brand)">${ship === null ? 'Not available' : ship ? price(ship) : 'Free'}</strong>
     </div>
 
-    ${S.fx.currency !== 'PKR' ? `<p class="text-xs rounded-lg p-2.5 mb-4" style="background:var(--card);color:var(--ink)">Prices convert automatically. Easypaisa / JazzCash are paid in Pakistani Rupees — the exact PKR amount is shown on the next screen. For payment from outside Pakistan, message us on WhatsApp and we'll arrange it.</p>` : ''}
+    ${S.fx.currency !== 'PKR' ? `<p class="text-xs rounded-lg p-2.5 mb-4" style="background:var(--card);color:var(--ink)">Prices are shown in your currency for convenience but all payments are charged in Pakistani Rupees (PKR) — the exact amount is confirmed before you pay. International cards are accepted on the secure card page.</p>` : ''}
 
     <p class="text-xs font-semibold uppercase tracking-wide mb-3" style="color:var(--sand)">Choose a payment method</p>
     <div class="space-y-3">
@@ -1983,25 +2023,42 @@ function CheckoutStep2() {
         </button>`).join('')}
     </div>
     ${S.paymentMethod === 'Bank Transfer' ? bankDetailsCard() : ''}
+    ${S.paymentMethod === CARD_METHOD ? `
+    <div class="rounded-xl p-4 mt-3 text-sm flex gap-3" style="background:var(--card);color:var(--ink)">
+      <span class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-white" style="background:var(--ok)">${I.lock || '🔒'}</span>
+      <p>You'll be taken to Safepay's secure page to enter your card details, then straight back here. You'll be charged <strong style="color:var(--brand)">${price(total)}</strong>${S.fx.currency !== 'PKR' ? ` <span style="color:var(--sand)">(${money(total)}, billed in PKR)</span>` : ''}.</p>
+    </div>` : ''}
 
     <div class="mt-7 flex justify-between items-center gap-4">
       <button onclick="prevStep()" class="btn btn-ghost px-6 py-3 text-sm"><span class="btn-label">Back</span></button>
-      <button onclick="placeOrder(this)" class="btn btn-primary px-8 py-3.5 text-sm"><span class="btn-label">Place Order</span></button>
+      <button onclick="placeOrder(this)" class="btn btn-primary px-8 py-3.5 text-sm"><span class="btn-label">${payLabel}</span></button>
     </div>
   </div>`;
 }
 
 function CheckoutStep3() {
   const o = S.lastOrder;
+  const paid = !!(o && o.paid);
   return `
   <div class="rounded-2xl p-7 sm:p-10 text-center depth-2" style="background:#fff;border:1px solid var(--line)">
     <div class="mx-auto h-16 w-16 rounded-full flex items-center justify-center text-white p-4 pop-check" style="background:var(--ok)">${I.check}</div>
-    <h3 class="font-display text-2xl font-bold mt-5" style="color:var(--brand)">Order received${o ? ` — ${o.id}` : ''}</h3>
+    <h3 class="font-display text-2xl font-bold mt-5" style="color:var(--brand)">${paid ? 'Payment received' : 'Order received'}${o ? ` — ${o.id}` : ''}</h3>
     <p class="mt-2 text-sm max-w-md mx-auto" style="color:var(--ink)">
-      One last step to confirm your order.
+      ${paid ? "Your order is confirmed and we'll get to work on it. A confirmation is on its way to your email." : 'One last step to confirm your order.'}
     </p>
 
-    ${o && o.method === 'Bank Transfer' ? `
+    ${paid ? `
+    <div class="mt-7 rounded-xl p-6 text-left" style="background:var(--card);color:var(--ink)">
+      <div class="text-sm space-y-1">
+        <div class="flex justify-between"><span>Paid by</span><strong>Card &middot; Safepay</strong></div>
+        <div class="flex justify-between"><span>Amount paid</span><strong style="color:var(--brand)">${price(o.total)}${S.fx.currency!=='PKR'?` <span class="font-normal" style="color:var(--sand)">(${money(o.total)})</span>`:''}</strong></div>
+        ${o.paymentRef ? `<div class="flex justify-between"><span>Reference</span><strong class="break-all">${o.paymentRef}</strong></div>` : ''}
+      </div>
+      <p class="text-sm mt-3">Questions about your order? Message us on WhatsApp:</p>
+      <a href="${WA_URL}" target="_blank" rel="noopener noreferrer" class="mt-2 flex items-center justify-center gap-2 rounded-lg bg-white p-3 text-sm font-medium" style="border:1px solid var(--line);color:var(--brand)">${I.whatsapp} ${PHONE}</a>
+    </div>` : ''}
+
+    ${!paid && o && o.method === 'Bank Transfer' ? `
     <div class="mt-7 rounded-xl p-6 text-left" style="background:var(--card);color:var(--ink)">
       <p class="font-semibold mb-2" style="color:var(--brand)">Pay by ${BANK.name} transfer</p>
       <p class="text-sm mb-3">Transfer <strong style="color:var(--brand)">${price(o.total)}${S.fx.currency!=='PKR'?` (${money(o.total)})`:''}</strong> to:</p>
@@ -2012,6 +2069,7 @@ function CheckoutStep3() {
       </div>
     </div>` : ''}
 
+    ${!paid ? `
     <div class="mt-7 rounded-xl p-6 text-left" style="background:var(--card);color:var(--ink)">
       <p class="font-semibold mb-2" style="color:var(--brand)">Send your payment proof</p>
       <p class="text-sm">Please send a screenshot of your payment (with your name & order ID) to:</p>
@@ -2025,7 +2083,7 @@ function CheckoutStep3() {
         <div class="flex justify-between"><span>Method chosen</span><strong>${o.method}</strong></div>
         <div class="flex justify-between"><span>Amount to send</span><strong style="color:var(--brand)">${price(o.total)}${S.fx.currency!=='PKR'?` <span class="font-normal" style="color:var(--sand)">(${money(o.total)})</span>`:''}</strong></div>
       </div>` : ''}
-    </div>
+    </div>` : ''}
 
     <div class="mt-7 flex flex-col sm:flex-row justify-center gap-3">
       <button onclick="S.lastOrder=null;goto('home')" class="btn btn-primary px-7 py-3.5 text-sm"><span class="btn-label">Back to home</span></button>
@@ -2325,6 +2383,7 @@ function AdminOrders() {
             <p class="text-sm mt-1" style="color:var(--ink)">${o.name || '—'} · ${o.phone || ''}</p>
             <p class="text-xs mt-0.5" style="color:var(--ink)">${[o.address, o.city, o.postal, o.countryName || (o.country && countryName(o.country))].filter(Boolean).join(', ')}</p>
             <p class="text-xs mt-0.5" style="color:var(--sand)">${o.email || ''} · Payment: ${o.method || '—'}</p>
+            ${o.paid ? `<p class="text-[11px] mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold text-white" style="background:var(--ok)">✓ Paid by card${o.paymentRef ? ` · ${o.paymentRef}` : ''}</p>` : ''}
             ${o.notes ? `<p class="text-xs mt-1 italic" style="color:var(--ink)">Note: ${o.notes}</p>` : ''}
           </div>
           <div class="text-right shrink-0">
@@ -2609,8 +2668,34 @@ try {
   }
 } catch (e) {}
 
+// returning from the Safepay card page
+(function handlePaymentReturn() {
+  const q = new URLSearchParams(location.search);
+  const paidId = q.get('paid');
+  const checkId = q.get('paycheck');
+  const cancelled = q.get('checkout') === 'cancelled';
+  if (!paidId && !checkId && !cancelled) return;
+  history.replaceState(null, '', location.pathname);
+  S.route = 'checkout';
+  if (cancelled) {
+    S.checkoutStep = 2;
+    setTimeout(() => toast('Payment cancelled — your cart is saved', 'err'), 300);
+    return;
+  }
+  const id = paidId || checkId;
+  const o = S.orders.find(x => x.id === id) || S.lastOrder;
+  if (o) {
+    if (paidId) { o.paid = true; o.status = 'Processing'; }
+    S.lastOrder = o;
+  }
+  S.cart = [];
+  S.checkoutStep = 3;
+  if (checkId) setTimeout(() => toast("We're confirming your payment — you'll get an email shortly", 'ok'), 300);
+})();
+
 render();
 if (wantsAdmin) enterAdmin({ fromUrl: true });
+loadPayConfig();
 loadGeo();
 loadSettings();
 loadProducts();
