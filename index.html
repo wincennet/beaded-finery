@@ -1318,6 +1318,8 @@ const PHONE = '03244896469';
 const WA_URL = 'https://wa.me/923244896469';
 const TIKTOK_URL = 'https://www.tiktok.com/@beadedfinery';
 const YT_URL = 'https://www.youtube.com/@beadedfinery';
+const EP_JC_NUMBER = '0334 4035732';
+const BANK = { name: 'Meezan Bank', title: 'MANAHAL AHMED', acc: '00300116083220', iban: 'PK21MEZN0000300116083220' };
 
 /* ==================================================================== */
 /*  RENDER                                                               */
@@ -1767,8 +1769,7 @@ function Footer() {
         <ul class="space-y-2 text-sm text-white/85">
           <li>Pakistan: ${price(S.ship.pk.rate)} — free over ${price(S.ship.pk.freeOver)}</li>
           <li>International: from ${price(S.ship.intl.default)}, by country</li>
-          <li>Payment: Easypaisa &amp; JazzCash</li>
-          <li>Bank transfer available on request</li>
+          <li>Payment: Easypaisa, JazzCash &amp; Meezan Bank transfer</li>
           <li>Full advance payment confirms order</li>
         </ul>
         <form onsubmit="event.preventDefault();this.reset();toast('Subscribed — welcome!','ok')" class="mt-5 flex gap-2">
@@ -1920,11 +1921,32 @@ function CheckoutStep1() {
   </div>`;
 }
 
+function payCopyRow(label, val) {
+  return `
+  <div class="flex items-center justify-between gap-3 rounded-lg bg-white p-2.5 text-sm" style="border:1px solid var(--line)">
+    <span class="min-w-0">
+      <span class="block text-[11px]" style="color:var(--sand)">${label}</span>
+      <span class="font-medium break-all" style="color:var(--ink)">${val}</span>
+    </span>
+    <button type="button" onclick="navigator.clipboard?.writeText('${val}');toast('${label} copied','ok')" class="btn btn-ghost px-2.5 py-1.5 text-xs shrink-0"><span class="btn-label">Copy</span></button>
+  </div>`;
+}
+function bankDetailsCard() {
+  return `
+  <div class="rounded-xl p-4 mt-3 space-y-2" style="background:var(--card);color:var(--ink)">
+    <p class="text-xs font-semibold uppercase tracking-wide" style="color:var(--sand)">${BANK.name} transfer</p>
+    ${payCopyRow('Account title', BANK.title)}
+    ${payCopyRow('Account number', BANK.acc)}
+    ${payCopyRow('IBAN', BANK.iban)}
+    <p class="text-xs">Transfer the exact total, then share your receipt on the next screen to confirm your order.</p>
+  </div>`;
+}
+
 function CheckoutStep2() {
   const methods = [
-    ['Easypaisa', 'Manahal Ahmed', '0334 4035732'],
-    ['JazzCash', 'Manahal Ahmed', '0334 4035732'],
-    ['Bank Transfer', 'Available on request — details shared after you order.', ''],
+    ['Easypaisa', 'Manahal Ahmed', EP_JC_NUMBER],
+    ['JazzCash', 'Manahal Ahmed', EP_JC_NUMBER],
+    ['Bank Transfer', `${BANK.name} — ${BANK.title}`, ''],
   ];
   const sub = cartSubtotal();
   const ship = shipCost(sub);
@@ -1945,7 +1967,7 @@ function CheckoutStep2() {
 
     ${S.fx.currency !== 'PKR' ? `<p class="text-xs rounded-lg p-2.5 mb-4" style="background:var(--card);color:var(--ink)">Prices convert automatically. Easypaisa / JazzCash are paid in Pakistani Rupees — the exact PKR amount is shown on the next screen. For payment from outside Pakistan, message us on WhatsApp and we'll arrange it.</p>` : ''}
 
-    <p class="text-xs font-semibold uppercase tracking-wide mb-3" style="color:var(--sand)">Choose a payment method — Easypaisa &amp; JazzCash</p>
+    <p class="text-xs font-semibold uppercase tracking-wide mb-3" style="color:var(--sand)">Choose a payment method</p>
     <div class="space-y-3">
       ${methods.map(([name, holder, num]) => `
         <button onclick="S.paymentMethod='${name}';save();render()" class="w-full text-left rounded-xl p-4 transition-all duration-300 flex items-center gap-4 ${
@@ -1960,6 +1982,7 @@ function CheckoutStep2() {
           </span>
         </button>`).join('')}
     </div>
+    ${S.paymentMethod === 'Bank Transfer' ? bankDetailsCard() : ''}
 
     <div class="mt-7 flex justify-between items-center gap-4">
       <button onclick="prevStep()" class="btn btn-ghost px-6 py-3 text-sm"><span class="btn-label">Back</span></button>
@@ -1977,6 +2000,17 @@ function CheckoutStep3() {
     <p class="mt-2 text-sm max-w-md mx-auto" style="color:var(--ink)">
       One last step to confirm your order.
     </p>
+
+    ${o && o.method === 'Bank Transfer' ? `
+    <div class="mt-7 rounded-xl p-6 text-left" style="background:var(--card);color:var(--ink)">
+      <p class="font-semibold mb-2" style="color:var(--brand)">Pay by ${BANK.name} transfer</p>
+      <p class="text-sm mb-3">Transfer <strong style="color:var(--brand)">${price(o.total)}${S.fx.currency!=='PKR'?` (${money(o.total)})`:''}</strong> to:</p>
+      <div class="space-y-2">
+        ${payCopyRow('Account title', BANK.title)}
+        ${payCopyRow('Account number', BANK.acc)}
+        ${payCopyRow('IBAN', BANK.iban)}
+      </div>
+    </div>` : ''}
 
     <div class="mt-7 rounded-xl p-6 text-left" style="background:var(--card);color:var(--ink)">
       <p class="font-semibold mb-2" style="color:var(--brand)">Send your payment proof</p>
