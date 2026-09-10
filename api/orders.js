@@ -48,6 +48,7 @@ const sanitizeOrder = (raw) => {
           price: Math.max(0, Number(i.price) || 0),
         };
         if (i.size) it.size = String(i.size).slice(0, 40);
+        if (i.color) it.color = String(i.color).slice(0, 40);
         return it;
       })
     : [];

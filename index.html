@@ -450,11 +450,11 @@ const IG = n => `/images/instagram/ig${n}.jpg`;
 const SEED_PRODUCTS = [
   { name: 'Gulnaar Beaded Bangle', category: 'Bangles', price: 1250, oldPrice: 1550, stock: true, bestSeller: true, newArrival: false, tag: 'Bridal', desc: 'A hand-set beaded bangle in plum and champagne crystal tones.' },
   { name: 'Noor Bangle Pair', category: 'Bangles', price: 1800, stock: true, bestSeller: false, newArrival: true, desc: 'Matched pair of beaded bangles with hand-wrapped detailing.' },
-  { name: 'Daisy Beaded Bracelet', category: 'Bracelets', price: 1250, stock: true, bestSeller: true, newArrival: false, sizes: ['S', 'M', 'L'], desc: 'Delicate daisy beadwork on a gold-tone chain — an everyday favourite.' },
+  { name: 'Daisy Beaded Bracelet', category: 'Bracelets', price: 1250, stock: true, bestSeller: true, newArrival: false, sizes: ['S', 'M', 'L'], colors: ['White & Gold', 'Pink & Gold'], desc: 'Delicate daisy beadwork on a gold-tone chain — an everyday favourite.' },
   { name: 'Rosette Charm Bracelet', category: 'Bracelets', price: 1350, oldPrice: 1600, stock: false, bestSeller: false, newArrival: true, sizes: ['S', 'M', 'L'], desc: 'Layered charm bracelet with hand-beaded rosettes.' },
   { name: 'Beaded Blossom Ring', category: 'Rings/Ringlets', price: 900, stock: true, bestSeller: true, newArrival: true, desc: 'Adjustable ring with a hand-beaded flower at the centre.' },
   { name: 'Stackable Ringlet Trio', category: 'Rings/Ringlets', price: 1100, stock: true, bestSeller: false, newArrival: false, sizes: ['6', '7', '8', '9'], desc: 'Set of three fine ringlets with tiny beaded crowns.' },
-  { name: 'Champagne Jhumka Earrings', category: 'Earrings', price: 1450, img: IG(1), stock: true, bestSeller: true, newArrival: false, tag: 'Bestseller', desc: 'Hand-beaded champagne jhumkas that catch the light beautifully.' },
+  { name: 'Champagne Jhumka Earrings', category: 'Earrings', price: 1450, img: IG(1), stock: true, bestSeller: true, newArrival: false, tag: 'Bestseller', colors: ['Champagne', 'Rose', 'Emerald'], desc: 'Hand-beaded champagne jhumkas that catch the light beautifully.' },
   { name: 'Sahara Jhumka Earrings', category: 'Earrings', price: 1300, img: IG(2), stock: true, bestSeller: false, newArrival: true, desc: 'Pink and gold sahara-style jhumkas for desi looks.' },
   { name: 'Pastel Bali Hoops', category: 'Earrings', price: 1250, img: IG(5), stock: true, bestSeller: true, newArrival: false, desc: 'Lightweight beaded bali hoops in soft pastel crystals.' },
   { name: 'Heart Pendant Necklace', category: 'Necklaces', price: 1650, img: IG(3), stock: true, bestSeller: true, newArrival: false, desc: 'Beaded pendant necklace hand-loomed in pink and green.' },
@@ -501,6 +501,7 @@ const DEFAULT_STATE = {
   paymentMethod: 'Credit / Debit Card',
   cardPay: { enabled: false, env: 'sandbox' },
   pickSize: {},
+  pickColor: {},
   viewProduct: null,
   viewImg: 0,
   products: null,
@@ -545,8 +546,9 @@ function seedOrders() {
 /*  DERIVED                                                              */
 /* ==================================================================== */
 const getProduct = id => S.products.find(p => p.id === id);
-const cartKey = c => c.id + '|' + (c.size || '');
-const cartLineOf = (id, size) => S.cart.find(c => c.id === id && (c.size || '') === (size || ''));
+const cartKey = c => [c.id, c.size || '', c.color || ''].join('|');
+const parseCartKey = k => { const a = String(k).split('|'); return { id: a[0], size: a[1] || '', color: a[2] || '' }; };
+const cartLineOf = (id, size, color) => S.cart.find(c => c.id === id && (c.size || '') === (size || '') && (c.color || '') === (color || ''));
 const cartDetailed = () => S.cart.map(c => ({ ...c, key: cartKey(c), p: getProduct(c.id) })).filter(c => c.p);
 const cartCount = () => S.cart.reduce((s, c) => s + c.qty, 0);
 const cartSubtotal = () => cartDetailed().reduce((s, c) => s + c.p.price * c.qty, 0);
@@ -557,36 +559,36 @@ const cartTotal = () => (S.cart.length ? cartSubtotal() + cartShipping() : 0);
 /* ==================================================================== */
 /*  ACTIONS                                                              */
 /* ==================================================================== */
-function addToCart(id, size = '') {
+function addToCart(id, size = '', color = '') {
   const p = getProduct(id);
   if (!p || !p.stock) { toast('Out of stock', 'err'); return; }
-  if (p.sizes && p.sizes.length) {
-    if (!size || !p.sizes.includes(size)) size = p.sizes[0];   // wishlist / fallback
-  } else { size = ''; }
-  const line = cartLineOf(id, size);
-  if (line) line.qty++; else S.cart.push(size ? { id, qty: 1, size } : { id, qty: 1 });
-  save(); render(); toast(`${p.name}${size ? ' · ' + size : ''} added`, 'ok');
+  size = (p.sizes && p.sizes.length) ? (p.sizes.includes(size) ? size : p.sizes[0]) : '';
+  color = (p.colors && p.colors.length) ? (p.colors.includes(color) ? color : p.colors[0]) : '';
+  const line = cartLineOf(id, size, color);
+  if (line) line.qty++;
+  else { const nl = { id, qty: 1 }; if (size) nl.size = size; if (color) nl.color = color; S.cart.push(nl); }
+  save(); render();
+  const label = [size, color].filter(Boolean).join(', ');
+  toast(`${p.name}${label ? ' · ' + label : ''} added`, 'ok');
   pulseCart();
 }
 function pickCardSize(id, size) { S.pickSize = S.pickSize || {}; S.pickSize[id] = size; save(); render(); }
+function pickCardColor(id, color) { S.pickColor = S.pickColor || {}; S.pickColor[id] = color; save(); render(); }
 function setQty(key, qty) {
   qty = Math.max(0, qty);
-  const cut = key.indexOf('|');
-  const id = cut === -1 ? key : key.slice(0, cut);
-  const size = cut === -1 ? '' : key.slice(cut + 1);
-  if (qty === 0) S.cart = S.cart.filter(c => !(c.id === id && (c.size || '') === size));
-  else { const l = cartLineOf(id, size); if (l) l.qty = qty; }
+  const { id, size, color } = parseCartKey(key);
+  if (qty === 0) S.cart = S.cart.filter(c => !(c.id === id && (c.size || '') === size && (c.color || '') === color));
+  else { const l = cartLineOf(id, size, color); if (l) l.qty = qty; }
   save(); render();
 }
-function changeCartSize(key, newSize) {
-  const cut = key.indexOf('|');
-  const id = cut === -1 ? key : key.slice(0, cut);
-  const size = cut === -1 ? '' : key.slice(cut + 1);
-  const line = cartLineOf(id, size);
-  if (!line || (line.size || '') === newSize) return;
-  const merge = S.cart.find(c => c !== line && c.id === id && (c.size || '') === newSize);
+function changeCartVariant(key, kind, val) {
+  const { id, size, color } = parseCartKey(key);
+  const line = cartLineOf(id, size, color);
+  if (!line || (line[kind] || '') === val) return;
+  const target = { size, color, [kind]: val };
+  const merge = S.cart.find(c => c !== line && c.id === id && (c.size || '') === target.size && (c.color || '') === target.color);
   if (merge) { merge.qty += line.qty; S.cart = S.cart.filter(c => c !== line); }
-  else line.size = newSize;
+  else line[kind] = val || undefined;
   save(); render();
 }
 function clearCart() { S.cart = []; save(); render(); }
@@ -628,7 +630,10 @@ function wishlistToCart() {
     const p = getProduct(id);
     if (!p || !p.stock) return;
     const size = (p.sizes && p.sizes.length) ? p.sizes[0] : '';
-    if (!cartLineOf(id, size)) S.cart.push(size ? { id, qty: 1, size } : { id, qty: 1 });
+    const color = (p.colors && p.colors.length) ? p.colors[0] : '';
+    if (!cartLineOf(id, size, color)) {
+      const nl = { id, qty: 1 }; if (size) nl.size = size; if (color) nl.color = color; S.cart.push(nl);
+    }
   });
   save(); render(); toast('Wishlist moved to cart', 'ok');
 }
@@ -759,7 +764,12 @@ async function placeOrder(btn) {
   const cc = shipCountry();
   if (shipBlocked(cc)) { toast(`We don't deliver to ${countryName(cc)} yet`, 'err'); return; }
   btn.classList.add('loading');
-  const items = cartDetailed().map(c => c.size ? { name: c.p.name, qty: c.qty, price: c.p.price, size: c.size } : { name: c.p.name, qty: c.qty, price: c.p.price });
+  const items = cartDetailed().map(c => {
+    const it = { name: c.p.name, qty: c.qty, price: c.p.price };
+    if (c.size) it.size = c.size;
+    if (c.color) it.color = c.color;
+    return it;
+  });
   const sub = cartSubtotal();
   const ship = shipCost(sub, cc) || 0;
   const order = {
@@ -1273,6 +1283,7 @@ function adminUpsert(form) {
     newArrival: !!data.newArrival,
     desc: data.desc?.trim() || '',
     sizes: (data.sizes || '').split(',').map(s => s.replace(/[|"']/g, '').trim()).filter(Boolean).slice(0, 24),
+    colors: (data.colors || '').split(',').map(s => s.replace(/[|"']/g, '').trim()).filter(Boolean).slice(0, 24),
     images: S.editImgs.slice(),
     img: (S.editImgs[0] || S.editImg || data.img || '').trim() || null,
   };
@@ -1674,8 +1685,19 @@ function Showcase(id, title, list) {
 function ProductCard(p, i = 0) {
   const inCart = S.cart.find(c => c.id === p.id);
   const hasSizes = Array.isArray(p.sizes) && p.sizes.length > 0;
+  const hasColors = Array.isArray(p.colors) && p.colors.length > 0;
   const selSize = hasSizes ? ((S.pickSize && S.pickSize[p.id]) || '') : '';
+  const selColor = hasColors ? ((S.pickColor && S.pickColor[p.id]) || '') : '';
   const needsSize = hasSizes && !selSize;
+  const needsColor = hasColors && !selColor;
+  const needsPick = needsSize || needsColor;
+  const pickPrompt = needsSize && needsColor ? 'Pick size & colour below'
+    : needsSize ? 'Choose a size below' : 'Choose a colour below';
+  const pillRow = (label, list, sel, fn) => `
+      <div class="flex flex-wrap items-center gap-1.5 pt-1.5">
+        <span class="text-[11px] mr-0.5" style="color:var(--sand)">${label}:</span>
+        ${list.map(v => `<button type="button" onclick="event.stopPropagation();${fn}('${p.id}','${v}')" class="px-2 py-0.5 rounded-full text-[11px] font-medium transition" style="border:1px solid ${sel === v ? 'var(--brand)' : 'var(--line)'};background:${sel === v ? 'var(--brand)' : '#fff'};color:${sel === v ? '#fff' : 'var(--ink)'}">${v}</button>`).join('')}
+      </div>`;
   const imgs = productImages(p);
   const alt = `${p.name} — handmade beaded ${p.category.toLowerCase()} by Beaded Finery`;
   const media = imgs.length > 1
@@ -1700,19 +1722,17 @@ function ProductCard(p, i = 0) {
       </button>
       ${!p.stock ? `<span class="absolute left-3 bottom-3 z-10 rounded-full px-2.5 py-1 text-[10px] font-semibold text-white" style="background:var(--err)">Sold out</span>` : ''}
       <div class="quick-add absolute inset-x-3 bottom-3 z-10">
-        <button onclick="addToCart('${p.id}','${selSize}')" ${(!p.stock || needsSize) ? 'disabled' : ''} class="btn ${inCart && !needsSize ? 'btn-ghost bg-white' : 'btn-primary'} w-full py-2.5 text-xs">
-          <span class="btn-label">${!p.stock ? 'Unavailable' : needsSize ? 'Choose a size below' : inCart ? `In cart (${inCart.qty}) · add more` : 'Add to Cart'}</span>
+        <button onclick="addToCart('${p.id}','${selSize}','${selColor}')" ${(!p.stock || needsPick) ? 'disabled' : ''} class="btn ${inCart && !needsPick ? 'btn-ghost bg-white' : 'btn-primary'} w-full py-2.5 text-xs">
+          <span class="btn-label">${!p.stock ? 'Unavailable' : needsPick ? pickPrompt : inCart ? `In cart (${inCart.qty}) · add more` : 'Add to Cart'}</span>
         </button>
       </div>
     </div>
     <div class="p-4 flex flex-col gap-1 flex-1">
       <span class="text-[11px] uppercase tracking-wide" style="color:var(--sand)">${p.category}</span>
       <h4 onclick="openProduct('${p.id}')" class="font-display text-[15px] font-semibold leading-tight cursor-pointer hover:opacity-70 transition" style="color:var(--ink)">${p.name}</h4>
-      ${hasSizes ? `
-      <div class="flex flex-wrap items-center gap-1.5 pt-1.5">
-        <span class="text-[11px] mr-0.5" style="color:var(--sand)">Size:</span>
-        ${p.sizes.map(sz => `<button type="button" onclick="event.stopPropagation();pickCardSize('${p.id}','${sz}')" class="px-2 py-0.5 rounded-full text-[11px] font-medium transition" style="border:1px solid ${selSize===sz?'var(--brand)':'var(--line)'};background:${selSize===sz?'var(--brand)':'#fff'};color:${selSize===sz?'#fff':'var(--ink)'}">${sz}</button>`).join('')}
-      </div>` : ''}
+      ${p.desc ? `<p class="text-xs leading-snug line-clamp-2" style="color:var(--sand)">${p.desc}</p>` : ''}
+      ${hasSizes ? pillRow('Size', p.sizes, selSize, 'pickCardSize') : ''}
+      ${hasColors ? pillRow('Colour', p.colors, selColor, 'pickCardColor') : ''}
       <div class="mt-auto pt-2 flex items-center gap-2">
         <span class="font-semibold" style="color:var(--brand)">${price(p.price)}</span>
         ${p.oldPrice && p.oldPrice > p.price ? `<span class="text-xs line-through" style="color:var(--sand)">${price(p.oldPrice)}</span>` : ''}
@@ -1728,9 +1748,18 @@ function ProductModal() {
   const idx = Math.min(S.viewImg || 0, Math.max(0, imgs.length - 1));
   const cur = imgs[idx];
   const hasSizes = Array.isArray(p.sizes) && p.sizes.length > 0;
+  const hasColors = Array.isArray(p.colors) && p.colors.length > 0;
   const sel = hasSizes ? ((S.pickSize && S.pickSize[p.id]) || '') : '';
-  const needsSize = hasSizes && !sel;
+  const selC = hasColors ? ((S.pickColor && S.pickColor[p.id]) || '') : '';
+  const needsPick = (hasSizes && !sel) || (hasColors && !selC);
   const inCart = S.cart.find(c => c.id === p.id);
+  const optGroup = (title, list, chosen, fn) => `
+          <div class="mt-5">
+            <p class="text-xs font-semibold uppercase tracking-wide mb-2" style="color:var(--sand)">${title}</p>
+            <div class="flex flex-wrap gap-2">
+              ${list.map(v => `<button onclick="${fn}('${p.id}','${v}')" class="px-3.5 py-1.5 rounded-full text-sm font-medium transition" style="border:1.5px solid ${chosen === v ? 'var(--brand)' : 'var(--line)'};background:${chosen === v ? 'var(--brand)' : '#fff'};color:${chosen === v ? '#fff' : 'var(--ink)'}">${v}</button>`).join('')}
+            </div>
+          </div>`;
   return `
   <div class="fixed inset-0 z-[130] flex items-center justify-center p-3 sm:p-5" onclick="if(event.target===this||event.target.classList.contains('bf-modal-bg'))closeProduct()">
     <div class="bf-modal-bg absolute inset-0 bg-black/55"></div>
@@ -1757,15 +1786,10 @@ function ProductModal() {
             ${!p.stock ? `<span class="text-[11px] font-semibold rounded-full px-2 py-0.5 text-white" style="background:var(--err)">Sold out</span>` : ''}
           </div>
           ${p.desc ? `<p class="text-sm mt-4 leading-relaxed" style="color:var(--ink)">${p.desc}</p>` : ''}
-          ${hasSizes ? `
-          <div class="mt-5">
-            <p class="text-xs font-semibold uppercase tracking-wide mb-2" style="color:var(--sand)">Choose your size</p>
-            <div class="flex flex-wrap gap-2">
-              ${p.sizes.map(sz => `<button onclick="pickCardSize('${p.id}','${sz}')" class="px-3.5 py-1.5 rounded-full text-sm font-medium transition" style="border:1.5px solid ${sel === sz ? 'var(--brand)' : 'var(--line)'};background:${sel === sz ? 'var(--brand)' : '#fff'};color:${sel === sz ? '#fff' : 'var(--ink)'}">${sz}</button>`).join('')}
-            </div>
-          </div>` : ''}
+          ${hasSizes ? optGroup('Choose your size', p.sizes, sel, 'pickCardSize') : ''}
+          ${hasColors ? optGroup('Choose your colour', p.colors, selC, 'pickCardColor') : ''}
           <div class="mt-6 flex gap-3">
-            <button onclick="addToCart('${p.id}','${sel}')" ${(!p.stock || needsSize) ? 'disabled' : ''} class="btn btn-primary flex-1 py-3 text-sm"><span class="btn-label">${!p.stock ? 'Unavailable' : needsSize ? 'Choose a size first' : inCart ? 'Add another' : 'Add to Cart'}</span></button>
+            <button onclick="addToCart('${p.id}','${sel}','${selC}')" ${(!p.stock || needsPick) ? 'disabled' : ''} class="btn btn-primary flex-1 py-3 text-sm"><span class="btn-label">${!p.stock ? 'Unavailable' : needsPick ? 'Select your options' : inCart ? 'Add another' : 'Add to Cart'}</span></button>
             <button onclick="toggleWishlist('${p.id}')" aria-label="${inWishlist(p.id) ? 'Remove from wishlist' : 'Save to wishlist'}" class="btn btn-ghost px-4 py-3" style="color:${inWishlist(p.id) ? 'var(--err)' : 'var(--brand)'}">${inWishlist(p.id) ? I.heartFill : I.heart}</button>
           </div>
           <p class="text-[11px] mt-3" style="color:var(--sand)">Handmade to order · flat Rs. 300 delivery in Pakistan, free over Rs. 3,000</p>
@@ -2003,13 +2027,13 @@ function orderSummaryCard() {
   const lines = cartDetailed();
   if (!lines.length && !S.lastOrder) return '';
   const useLast = !lines.length && S.lastOrder;
-  const items = useLast ? S.lastOrder.items.map(i => ({ name:i.name, qty:i.qty, price:i.price, size:i.size })) : lines.map(c => ({ name:c.p.name, qty:c.qty, price:c.p.price, size:c.size }));
+  const items = useLast ? S.lastOrder.items.map(i => ({ name:i.name, qty:i.qty, price:i.price, size:i.size, color:i.color })) : lines.map(c => ({ name:c.p.name, qty:c.qty, price:c.p.price, size:c.size, color:c.color }));
   const sub = items.reduce((s,i)=>s+i.price*i.qty,0);
   return `
   <div class="rounded-2xl p-5 mb-6 depth-1" style="background:var(--card)">
     <p class="font-display font-semibold mb-3" style="color:var(--brand)">Order Summary</p>
     <div class="space-y-2 text-sm" style="color:var(--ink)">
-      ${items.map(i => `<div class="flex justify-between gap-2"><span>${i.name}${i.size ? ` <span style="color:var(--sand)">(${i.size})</span>` : ''} × ${i.qty}</span><span>${price(i.price*i.qty)}</span></div>`).join('')}
+      ${items.map(i => { const v = [i.size, i.color].filter(Boolean).join(', '); return `<div class="flex justify-between gap-2"><span>${i.name}${v ? ` <span style="color:var(--sand)">(${v})</span>` : ''} × ${i.qty}</span><span>${price(i.price*i.qty)}</span></div>`; }).join('')}
       <div class="h-px my-2" style="background:var(--line)"></div>
       <div class="flex justify-between"><span>Subtotal</span><span>${price(sub)}</span></div>
       ${shipCost(sub) === null
@@ -2225,10 +2249,16 @@ function CartDrawer() {
               <p class="text-xs" style="color:var(--sand)">${c.p.category}</p>
               ${c.p.sizes && c.p.sizes.length ? `
               <label class="text-xs flex items-center gap-1.5 mt-1" style="color:var(--sand)">Size
-                <select onchange="changeCartSize('${c.key}',this.value)" class="rounded px-1.5 py-0.5 text-xs" style="border:1px solid var(--line);color:var(--ink);background:#fff">
+                <select onchange="changeCartVariant('${c.key}','size',this.value)" class="rounded px-1.5 py-0.5 text-xs" style="border:1px solid var(--line);color:var(--ink);background:#fff">
                   ${c.p.sizes.map(sz => `<option ${(c.size||'')===sz?'selected':''}>${sz}</option>`).join('')}
                 </select>
               </label>` : (c.size ? `<p class="text-xs mt-0.5" style="color:var(--sand)">Size: <strong style="color:var(--ink)">${c.size}</strong></p>` : '')}
+              ${c.p.colors && c.p.colors.length ? `
+              <label class="text-xs flex items-center gap-1.5 mt-1" style="color:var(--sand)">Colour
+                <select onchange="changeCartVariant('${c.key}','color',this.value)" class="rounded px-1.5 py-0.5 text-xs" style="border:1px solid var(--line);color:var(--ink);background:#fff">
+                  ${c.p.colors.map(cl => `<option ${(c.color||'')===cl?'selected':''}>${cl}</option>`).join('')}
+                </select>
+              </label>` : (c.color ? `<p class="text-xs mt-0.5" style="color:var(--sand)">Colour: <strong style="color:var(--ink)">${c.color}</strong></p>` : '')}
               <p class="text-sm font-semibold mt-0.5" style="color:var(--brand)">${price(c.p.price)}</p>
               <div class="flex items-center gap-2 mt-2">
                 <button onclick="setQty('${c.key}',${c.qty - 1})" class="h-7 w-7 rounded-full flex items-center justify-center" style="background:var(--card);color:var(--ink)">${I.minus}</button>
@@ -2282,7 +2312,7 @@ function WishlistDrawer() {
               <p class="text-xs" style="color:var(--sand)">${p.category}</p>
               <p class="text-sm font-semibold mt-0.5" style="color:var(--brand)">${price(p.price)}</p>
               <div class="flex items-center gap-2 mt-2">
-                <button onclick="${p.sizes && p.sizes.length ? `openWishlist(false);openProduct('${p.id}')` : `addToCart('${p.id}')`}" ${!p.stock?'disabled':''} class="btn ${p.stock?'btn-primary':'btn-ghost'} px-3 py-1.5 text-xs"><span class="btn-label">${!p.stock ? 'Sold out' : (p.sizes && p.sizes.length ? 'Choose size' : 'Add to cart')}</span></button>
+                <button onclick="${((p.sizes && p.sizes.length) || (p.colors && p.colors.length)) ? `openWishlist(false);openProduct('${p.id}')` : `addToCart('${p.id}')`}" ${!p.stock?'disabled':''} class="btn ${p.stock?'btn-primary':'btn-ghost'} px-3 py-1.5 text-xs"><span class="btn-label">${!p.stock ? 'Sold out' : (((p.sizes && p.sizes.length) || (p.colors && p.colors.length)) ? 'Choose options' : 'Add to cart')}</span></button>
                 <button onclick="toggleWishlist('${p.id}')" class="ml-auto p-1.5 rounded-lg hover:bg-black/5" style="color:var(--err)">${I.trash}</button>
               </div>
             </div>
@@ -2456,6 +2486,9 @@ function AdminProducts() {
           <label class="block"><span class="text-xs font-medium mb-1 block" style="color:var(--ink)">Sizes <span style="color:var(--sand)">(optional — separate with commas)</span></span>
             <input name="sizes" class="field" value="${(editing?.sizes || []).join(', ')}" placeholder="e.g. S, M, L   or   16cm, 17cm, 18cm">
             <span class="text-[11px] mt-1 block" style="color:var(--sand)">Leave blank for one-size items. When set, customers must pick a size before adding to cart.</span></label>
+          <label class="block"><span class="text-xs font-medium mb-1 block" style="color:var(--ink)">Colours <span style="color:var(--sand)">(optional — separate with commas)</span></span>
+            <input name="colors" class="field" value="${(editing?.colors || []).join(', ')}" placeholder="e.g. Pink, Gold, Multi">
+            <span class="text-[11px] mt-1 block" style="color:var(--sand)">Leave blank if the piece comes in one colour only.</span></label>
           <div class="flex gap-4 text-sm py-1" style="color:var(--ink)">
             <label class="flex items-center gap-2"><input type="checkbox" name="bestSeller" ${editing?.bestSeller ? 'checked' : ''} class="accent-[var(--brand)] h-4 w-4"> Best seller</label>
             <label class="flex items-center gap-2"><input type="checkbox" name="newArrival" ${editing?.newArrival ? 'checked' : ''} class="accent-[var(--brand)] h-4 w-4"> New arrival</label>
@@ -2474,7 +2507,7 @@ function AdminProducts() {
           <div class="h-14 w-14 rounded-lg overflow-hidden shrink-0">${p.img ? `<img src="${p.img}" alt="${p.name}" class="w-full h-full object-cover photo-crop">` : motif(p.category, 'ap'+p.id)}</div>
           <div class="flex-1 min-w-0">
             <p class="font-display text-sm font-semibold truncate" style="color:var(--ink)">${p.name}</p>
-            <p class="text-xs" style="color:var(--sand)">${p.category} · ${money(p.price)}${p.oldPrice && p.oldPrice > p.price ? ` (was ${money(p.oldPrice)})` : ''}${p.sizes && p.sizes.length ? ` · sizes: ${p.sizes.join('/')}` : ''}</p>
+            <p class="text-xs" style="color:var(--sand)">${p.category} · ${money(p.price)}${p.oldPrice && p.oldPrice > p.price ? ` (was ${money(p.oldPrice)})` : ''}${p.sizes && p.sizes.length ? ` · sizes: ${p.sizes.join('/')}` : ''}${p.colors && p.colors.length ? ` · colours: ${p.colors.join('/')}` : ''}</p>
           </div>
           <button onclick="adminToggleStock('${p.id}')" class="text-[11px] font-semibold rounded-full px-3 py-1.5 text-white shrink-0" style="background:${p.stock ? 'var(--ok)' : 'var(--err)'}">
             ${p.stock ? 'In Stock' : 'Out of Stock'}
@@ -2515,7 +2548,7 @@ function AdminOrders() {
         </div>
 
         <div class="mt-3 rounded-lg p-3 text-sm space-y-1" style="background:var(--card);color:var(--ink)">
-          ${(o.items || []).map(i => `<div class="flex justify-between"><span>${i.name}${i.size ? ` · ${i.size}` : ''} × ${i.qty}</span><span>${money((i.price || 0) * (i.qty || 0))}</span></div>`).join('')}
+          ${(o.items || []).map(i => { const v = [i.size, i.color].filter(Boolean).join(' · '); return `<div class="flex justify-between"><span>${i.name}${v ? ` · ${v}` : ''} × ${i.qty}</span><span>${money((i.price || 0) * (i.qty || 0))}</span></div>`; }).join('')}
         </div>
 
         <div class="mt-4 flex flex-wrap items-center gap-2">
@@ -2775,6 +2808,7 @@ S.demoPick = [];
 S.demoUndo = [];
 S.checkoutCountry = '';
 S.pickSize = {};
+S.pickColor = {};
 S.viewProduct = null;
 S.viewImg = 0;
 S.cartOpen = S.wishlistOpen = S.searchOpen = false;
