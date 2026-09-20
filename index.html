@@ -1020,9 +1020,27 @@ async function publishCatalogue(btn) {
   if (btn) btn.classList.remove('loading');
 }
 function restoreStarterCatalogue() {
-  if (!confirm('Replace the whole catalogue with the built-in starter set? Your current products will be overwritten.')) return;
+  if (!confirm('This REPLACES your entire live catalogue with the 22 built-in demo products.\n\nEverything you or your client added will disappear from the shop. (The catalogue as it is right now gets saved first, so "Undo last catalogue change" can bring it straight back.)\n\nContinue?')) return;
   S.products = structuredClone(SEED_PRODUCTS);
   save(); render(); publishCatalogue();
+}
+async function undoCatalogueChange(btn) {
+  if (btn) btn.classList.add('loading');
+  try {
+    const infoRes = await fetch('/api/products?backup=1', { headers: adminHeaders() });
+    const info = await infoRes.json().catch(() => ({}));
+    if (!infoRes.ok) { toast('Could not check — make sure you are signed in', 'err'); return; }
+    if (!info.t || !info.count) { toast('No previous catalogue saved to restore', 'err'); return; }
+    const when = new Date(info.t).toLocaleString();
+    if (!confirm(`Restore the catalogue as it was before the last full change?\n\n${info.count} product(s), saved ${when}.\n\nWhat's live now gets saved too, so this can be undone again if needed.`)) return;
+    const r = await fetch('/api/products', { method: 'PUT', headers: adminHeaders(), body: JSON.stringify({ restoreBackup: true }) });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) { toast(`Restored ${j.count} product${j.count === 1 ? '' : 's'}`, 'ok'); loadProducts(); }
+    else toast(j.error || 'Could not restore', 'err');
+  } catch (e) {
+    toast('Could not restore', 'err');
+  }
+  if (btn) btn.classList.remove('loading');
 }
 
 /* ---- one-tap cleanup of the sample data the site shipped with ---- */
@@ -2408,7 +2426,7 @@ function Admin() {
           <button onclick="S.adminTab='${k}';save();render();${k==='feedback'?'loadAllReviews()':(k==='shipping'||k==='homepage')?'loadSettings()':''}" class="rounded-full px-5 py-2.5 text-sm font-medium transition-all duration-300 ${
             S.adminTab === k ? 'text-white depth-brand' : ''
           }" style="${S.adminTab === k ? 'background:var(--brand)' : 'background:var(--card);color:var(--ink)'}">${l}${k==='feedback' && S.allReviews.filter(r=>!r.approved).length ? ` <span class="ml-1 inline-flex h-4 min-w-4 px-1 rounded-full text-[10px] items-center justify-center" style="background:${S.adminTab===k?'#fff':'var(--err)'};color:${S.adminTab===k?'var(--brand)':'#fff'}">${S.allReviews.filter(r=>!r.approved).length}</span>` : ''}</button>`).join('')}
-        ${S.adminTab === 'products' ? `<button onclick="restoreStarterCatalogue()" class="ml-auto rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--sand)">Restore starter catalogue</button>` : S.adminTab === 'orders' ? `<button onclick="scanDemoData(this)" class="btn ml-auto rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--sand)"><span class="btn-label">🧹 Delete sample data</span></button><button onclick="resetAll()" class="rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--sand)">Reset local data</button>` : ''}
+        ${S.adminTab === 'products' ? `<button onclick="undoCatalogueChange(this)" class="btn ml-auto rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--brand)"><span class="btn-label">↩ Undo last catalogue change</span></button><button onclick="restoreStarterCatalogue()" class="rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--sand)">Reset to demo catalogue</button>` : S.adminTab === 'orders' ? `<button onclick="scanDemoData(this)" class="btn ml-auto rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--sand)"><span class="btn-label">🧹 Delete sample data</span></button><button onclick="resetAll()" class="rounded-full px-4 py-2.5 text-xs font-medium" style="background:var(--card);color:var(--sand)">Reset local data</button>` : ''}
       </div>
 
       ${S.adminTab === 'products' ? AdminProducts() : S.adminTab === 'orders' ? AdminOrders() : S.adminTab === 'shipping' ? AdminShipping() : S.adminTab === 'homepage' ? AdminHomepage() : AdminFeedback()}

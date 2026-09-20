@@ -13,6 +13,7 @@
 import { Redis } from '@upstash/redis';
 
 const KEY = 'beadedfinery:products';
+const BACKUP_KEY = 'beadedfinery:products:backup';
 const ADMIN_KEY = process.env.ADMIN_KEY || '';
 
 let redis = null;
@@ -81,6 +82,14 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
+      // owner-only: "is there a previous catalogue saved that I could undo to?"
+      if (req.query && req.query.backup) {
+        if (!isOwner(req)) return res.status(401).json({ error: 'Unauthorized' });
+        const raw = await redis.get(BACKUP_KEY);
+        const backup = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : null;
+        const count = backup && Array.isArray(backup.products) ? backup.products.length : 0;
+        return res.status(200).json({ t: (backup && count) ? backup.t : null, count });
+      }
       const hash = (await redis.hgetall(KEY)) || {};
       const list = Object.values(hash).map((v) => (typeof v === 'string' ? JSON.parse(v) : v));
       return res.status(200).json(list);
@@ -88,8 +97,32 @@ export default async function handler(req, res) {
 
     if (req.method === 'PUT') {
       const body = readBody(req);
+
+      if (body.restoreBackup) {
+        const raw = await redis.get(BACKUP_KEY);
+        const backup = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : null;
+        if (!backup || !Array.isArray(backup.products) || !backup.products.length) {
+          return res.status(404).json({ error: 'No previous catalogue saved' });
+        }
+        const cur = (await redis.hgetall(KEY)) || {};
+        const curList = Object.values(cur).map((v) => (typeof v === 'string' ? JSON.parse(v) : v));
+        await redis.del(KEY);
+        const entries = {};
+        for (const p of backup.products.slice(0, 300)) { const c = clean(p); entries[c.id] = JSON.stringify(c); }
+        if (Object.keys(entries).length) await redis.hset(KEY, entries);
+        // what was live a moment ago becomes the new "undo" point, so this is reversible too
+        if (curList.length) await redis.set(BACKUP_KEY, JSON.stringify({ t: Date.now(), products: curList }));
+        else await redis.del(BACKUP_KEY);
+        return res.status(200).json({ ok: true, count: Object.keys(entries).length, restoredFrom: backup.t });
+      }
+
       if (Array.isArray(body.products)) {
-        // replace the whole catalogue
+        // replace the whole catalogue — snapshot what's live first so this is always undoable
+        try {
+          const cur = (await redis.hgetall(KEY)) || {};
+          const curList = Object.values(cur).map((v) => (typeof v === 'string' ? JSON.parse(v) : v));
+          if (curList.length) await redis.set(BACKUP_KEY, JSON.stringify({ t: Date.now(), products: curList }));
+        } catch (e) { /* backup is best-effort, never block the publish */ }
         await redis.del(KEY);
         const entries = {};
         for (const p of body.products.slice(0, 300)) { const c = clean(p); entries[c.id] = JSON.stringify(c); }
