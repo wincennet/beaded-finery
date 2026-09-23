@@ -52,8 +52,11 @@ function clean(p) {
   const colors = cleanList(o.colors);
   if (sizes.length) out.sizes = sizes;
   if (colors.length) out.colors = colors;
-  // accept data:image URIs (compressed by the client) and normal http(s) URLs
-  const okImg = (s) => s && (/^data:image\//.test(s) || /^https?:\/\//.test(s)) && s.length < 800000;
+  // accept data:image URIs (compressed by the client), normal http(s) URLs, and
+  // site-relative paths like the bundled /images/instagram/ig1.jpg placeholders —
+  // those were silently dropped before, which is why seeded demo photos vanished
+  // whenever the catalogue got republished.
+  const okImg = (s) => s && (/^data:image\//.test(s) || /^https?:\/\//.test(s) || /^\/[\w.\-\/]+\.(?:jpe?g|png|webp|gif|svg)$/i.test(s)) && s.length < 800000;
   let imgs = Array.isArray(o.images) ? o.images.map((x) => String(x || '')).filter(okImg) : [];
   const single = o.img ? String(o.img) : '';
   if (!imgs.length && okImg(single)) imgs = [single];
