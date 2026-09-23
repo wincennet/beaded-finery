@@ -1421,6 +1421,7 @@ const I = {
   chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-5 h-5"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg>',
   box: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-5 h-5"><path d="M3 8l9-5 9 5-9 5-9-5Zm0 0v8l9 5 9-5V8"/></svg>',
   insta: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-5 h-5"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17" cy="7" r="1" fill="currentColor"/></svg>',
+  mail: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" class="w-5 h-5"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg>',
 tiktok: '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5" aria-hidden="true"><path d="M12.53.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/></svg>',
 whatsapp: '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2Zm5.8 14.2c-.2.6-1.2 1.2-1.7 1.2-.4 0-1 .1-3.2-.9-2.7-1.2-4.4-4-4.5-4.2-.1-.2-1-1.4-1-2.6s.6-1.8.9-2.1c.2-.2.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 2c.1.2.1.4 0 .5l-.4.5c-.1.2-.3.3-.1.6.1.3.7 1.1 1.4 1.7 1 .8 1.7 1.1 2 1.2.2.1.4.1.5-.1l.7-.8c.2-.2.3-.2.6-.1l1.9.9c.3.1.5.2.6.3.1.2.1.7-.1 1.3Z"/></svg>',
 youtube: '<svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5"><path d="M23 12s0-3.5-.4-5.2a3 3 0 0 0-2.1-2.1C18.7 4.3 12 4.3 12 4.3s-6.7 0-8.5.4A3 3 0 0 0 1.4 6.8C1 8.5 1 12 1 12s0 3.5.4 5.2a3 3 0 0 0 2.1 2.1c1.8.4 8.5.4 8.5.4s6.7 0 8.5-.4a3 3 0 0 0 2.1-2.1C23 15.5 23 12 23 12ZM9.8 15.3V8.7l5.7 3.3-5.7 3.3Z"/></svg>',
@@ -1456,6 +1457,10 @@ function Store() {
     ${S.route === 'home' ? Home() : ''}
     ${S.route === 'shop' ? ShopPage() : ''}
     ${S.route === 'checkout' ? Checkout() : ''}
+    ${S.route === 'terms' ? TermsPage() : ''}
+    ${S.route === 'privacy' ? PrivacyPage() : ''}
+    ${S.route === 'policies' ? PoliciesPage() : ''}
+    ${S.route === 'contact' ? ContactPage() : ''}
   </main>
   ${Footer()}
   ${CartDrawer()}
@@ -1967,10 +1972,173 @@ function Footer() {
         </form>
       </div>
     </div>
-    <div class="border-t border-white/15 py-5 text-center text-xs text-white/60">
-      © ${new Date().getFullYear()} Beaded Finery by Manahil. All rights reserved.
+    <div class="border-t border-white/15 py-5 text-center text-xs text-white/60 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 px-4">
+      <span>© ${new Date().getFullYear()} Beaded Finery by Manahil. All rights reserved.</span>
+      <button onclick="goto('terms')" class="hover:text-white transition underline underline-offset-2">Terms &amp; Conditions</button>
+      <button onclick="goto('privacy')" class="hover:text-white transition underline underline-offset-2">Privacy Policy</button>
+      <button onclick="goto('policies')" class="hover:text-white transition underline underline-offset-2">Shipping &amp; Returns</button>
+      <button onclick="goto('contact')" class="hover:text-white transition underline underline-offset-2">Contact Us</button>
     </div>
   </footer>`;
+}
+
+/* ---------- LEGAL / INFO PAGES ---------- */
+const LEGAL_UPDATED = 'September 23, 2026';
+function legalBack() {
+  return `<button onclick="goto('home')" class="text-sm nav-link mb-6 block" style="color:var(--brand)">← Back to home</button>`;
+}
+function legalHead(eyebrow, title, sub) {
+  return `
+  ${legalBack()}
+  <span class="text-xs tracking-[.25em] uppercase" style="color:var(--sand)">${eyebrow}</span>
+  <h1 class="font-display text-3xl sm:text-4xl font-bold mt-2 mb-1" style="color:var(--brand)">${title}</h1>
+  ${sub ? `<p class="text-sm mb-1" style="color:var(--ink)">${sub}</p>` : ''}
+  <p class="text-xs mb-8" style="color:var(--sand)">Last updated: ${LEGAL_UPDATED}</p>`;
+}
+function legalSection(num, title, bodyHtml) {
+  return `
+  <div class="mb-8">
+    <h3 class="font-display text-lg font-bold mb-2" style="color:var(--brand)">${num ? num + '. ' : ''}${title}</h3>
+    <div class="text-sm leading-relaxed space-y-2.5" style="color:var(--ink)">${bodyHtml}</div>
+  </div>`;
+}
+function legalList(items) {
+  return `<ul class="list-disc pl-5 space-y-1.5">${items.map(i => `<li>${i}</li>`).join('')}</ul>`;
+}
+
+function TermsPage() {
+  return `
+  <section class="max-w-3xl mx-auto px-4 sm:px-6 py-10 sm:py-16">
+    ${legalHead('Legal', 'Terms &amp; Conditions')}
+    ${legalSection(1, 'Introduction', `
+      <p>Beaded Finery ("we", "us", "our") is a handmade beaded jewelry business owned and operated by Manahal Ahmed, trading online at <strong>beadedfinery.com</strong>. We offer this website — and everything on it — to you, the visitor, on the condition that you accept the terms, conditions and policies stated here.</p>
+      <p>If you have any trouble placing an order, or need help after placing one, contact us on WhatsApp at ${PHONE} or by email at beadedfinerybymanahil@gmail.com.</p>
+    `)}
+    ${legalSection(2, 'Applicability &amp; Updates', `
+      <p>By visiting this website and/or purchasing from us, you agree to be bound by these Terms and Conditions, along with our <button onclick="goto('privacy')" class="underline" style="color:var(--brand)">Privacy Policy</button> and <button onclick="goto('policies')" class="underline" style="color:var(--brand)">Shipping, Exchange, Return &amp; Refund Policy</button>, both referenced here. These terms apply to everyone who uses this site — browsers, customers and anyone else.</p>
+      <p>We may update these Terms and Conditions from time to time. Each order you place is subject to the version in force at that time.</p>
+    `)}
+    ${legalSection(3, 'Products &amp; Orders', legalList([
+      'Every piece is handmade to order in Pakistan. Small variations in bead placement, colour and finishing are part of the handmade character of each item, not a defect.',
+      'Prices are set in Pakistani Rupees (PKR). Currencies shown to visitors outside Pakistan are converted estimates for convenience — the amount actually charged is in PKR.',
+      'Full advance payment is required to confirm an order; we do not currently offer cash on delivery.',
+      "We may decline or cancel an order — for example if stock has run out, we can't deliver to your location, or for reasons outside our control — and will refund any payment already made in that case.",
+    ]))}
+    ${legalSection(4, 'Terms of Use', `
+      <p>You agree not to use this website for any unlawful purpose, to infringe our intellectual property or anyone else's, to upload harmful code, to harass or defame others, or to submit false information. We may restrict or end access for anyone who breaks these terms.</p>
+    `)}
+    ${legalSection(5, 'Intellectual Property', `
+      <p>The photos, product designs, text and branding on this website belong to Beaded Finery. Please don't copy, reproduce or reuse our product photos or designs without our permission.</p>
+    `)}
+    ${legalSection(6, 'Liability', `
+      <p>We take care to describe and photograph our products accurately, but colours can appear slightly differently from screen to screen. Use of this website is at your own risk; to the extent permitted by law, we are not liable for indirect or consequential loss arising from your use of the site or our products.</p>
+    `)}
+    ${legalSection(7, 'Governing Law', `
+      <p>These Terms and Conditions are governed by the laws of Pakistan, and any dispute is subject to the exclusive jurisdiction of the courts of Pakistan.</p>
+    `)}
+    ${legalSection(8, 'Contact', `
+      <p>Questions about these terms? Email <a href="mailto:beadedfinerybymanahil@gmail.com" class="underline" style="color:var(--brand)">beadedfinerybymanahil@gmail.com</a> or WhatsApp <a href="${WA_URL}" target="_blank" rel="noopener noreferrer" class="underline" style="color:var(--brand)">${PHONE}</a>.</p>
+    `)}
+  </section>`;
+}
+
+function PrivacyPage() {
+  return `
+  <section class="max-w-3xl mx-auto px-4 sm:px-6 py-10 sm:py-16">
+    ${legalHead('Legal', 'Privacy Policy')}
+    ${legalSection(1, 'Introduction', `
+      <p>This Privacy Policy explains how Beaded Finery ("we", "us") collects and uses your personal data when you visit beadedfinery.com or place an order with us. By using this website or purchasing from us, you agree to this Privacy Policy.</p>
+    `)}
+    ${legalSection(2, 'Information We Collect', `
+      ${legalList([
+        'Contact details you give us at checkout: your name, phone number, email address, and delivery address and city.',
+        'Order details: the items you buy, order value, payment method chosen, and order status.',
+        'Messages you send us on WhatsApp, email, Instagram or TikTok when you contact us with a question or for support.',
+        'Basic technical information such as your approximate country, used only to show prices in your local currency and calculate delivery charges.',
+      ])}
+      <p>We do <strong>not</strong> ask for or store your card or bank details. Card payments are entered directly on our payment provider's secure page and never touch our own systems; bank transfers and mobile wallet payments are confirmed by you sending us a payment screenshot.</p>
+    `)}
+    ${legalSection(3, 'How We Use Your Information', legalList([
+      'To process, prepare and deliver your order, and to contact you about it.',
+      'To respond to your questions and support requests.',
+      'To show prices and delivery charges relevant to your country.',
+      'To improve our products, photos and website.',
+      'To meet our legal, tax and financial obligations.',
+    ]))}
+    ${legalSection(4, 'Who We Share It With', `
+      <p>We share delivery details with our courier partners so they can deliver your parcel, and payment details with our payment provider (Safepay) so they can process card payments securely. We do not sell your personal information to anyone.</p>
+    `)}
+    ${legalSection(5, 'How We Protect Your Information', `
+      <p>Your order information is stored on access-controlled servers. Card details are handled entirely by our payment provider and never pass through our own systems.</p>
+    `)}
+    ${legalSection(6, 'How Long We Keep It', `
+      <p>We keep order records for as long as needed to fulfil your order, handle any support request, and meet our accounting and legal obligations.</p>
+    `)}
+    ${legalSection(7, 'Your Choices', `
+      <p>You can ask us at any time what information we hold about you, or ask us to delete it (where we're not legally required to keep it), by emailing beadedfinerybymanahil@gmail.com.</p>
+    `)}
+    ${legalSection(8, 'Contact', `
+      <p>Questions about this policy? Email <a href="mailto:beadedfinerybymanahil@gmail.com" class="underline" style="color:var(--brand)">beadedfinerybymanahil@gmail.com</a> or WhatsApp <a href="${WA_URL}" target="_blank" rel="noopener noreferrer" class="underline" style="color:var(--brand)">${PHONE}</a>.</p>
+    `)}
+  </section>`;
+}
+
+function PoliciesPage() {
+  return `
+  <section class="max-w-3xl mx-auto px-4 sm:px-6 py-10 sm:py-16">
+    ${legalHead('Legal', 'Shipping, Exchange, Return &amp; Refund Policy')}
+    ${legalSection(null, 'Shipping', legalList([
+      `Pakistan: flat ${money(S.ship.pk.rate)}, free on orders over ${money(S.ship.pk.freeOver)}.`,
+      'International: delivery charges are calculated by country and shown at checkout before you pay.',
+      'We do not currently deliver to India.',
+      "Every piece is handmade to order — please allow a few days for your order to be prepared before it's dispatched.",
+    ]))}
+    ${legalSection(null, 'Order Cancellation', legalList([
+      "You can cancel your order any time before it has been dispatched — message us on WhatsApp or email as soon as possible and we'll refund your payment in full.",
+      'Once an order has been dispatched, it can no longer be cancelled.',
+    ]))}
+    ${legalSection(null, 'Exchanges', `
+      <p>Because every piece is handmade to order, we're not able to offer exchanges for a change of mind, or a different size or colour preference. If your item arrives damaged or incorrect, see Returns &amp; Refunds below — we'll send a replacement.</p>
+    `)}
+    ${legalSection(null, 'Returns &amp; Refunds', `
+      <p>Due to the handmade and customised nature of our jewelry, please note our strict policy below:</p>
+      ${legalList([
+        '<strong>No returns or refunds:</strong> we do not offer refunds, returns or exchanges if you simply change your mind after your order is confirmed and dispatched. All sales are final.',
+        "<strong>Damaged or wrong items (replacement only):</strong> if your jewelry arrives damaged or incorrect, you must send us a complete parcel-unboxing video as proof within 24 hours of delivery. Without a clear unboxing video showing the damage, we're unable to provide a replacement. New delivery charges apply for sending the replacement.",
+      ])}
+    `)}
+    ${legalSection(null, 'Contact Us', `
+      <p>Email <a href="mailto:beadedfinerybymanahil@gmail.com" class="underline" style="color:var(--brand)">beadedfinerybymanahil@gmail.com</a> or WhatsApp <a href="${WA_URL}" target="_blank" rel="noopener noreferrer" class="underline" style="color:var(--brand)">${PHONE}</a>.</p>
+    `)}
+  </section>`;
+}
+
+function ContactPage() {
+  const rows = [
+    ['Email', 'beadedfinerybymanahil@gmail.com', 'mailto:beadedfinerybymanahil@gmail.com', I.mail],
+    ['WhatsApp', PHONE, WA_URL, I.whatsapp],
+    ['Instagram', '@' + IG_HANDLE, IG_URL, I.insta],
+    ['TikTok', 'beadedfinery', TIKTOK_URL, I.tiktok],
+    ['YouTube', 'beadedfinery', YT_URL, I.youtube],
+  ];
+  return `
+  <section class="max-w-2xl mx-auto px-4 sm:px-6 py-10 sm:py-16">
+    ${legalBack()}
+    <span class="text-xs tracking-[.25em] uppercase" style="color:var(--sand)">Get in touch</span>
+    <h1 class="font-display text-3xl sm:text-4xl font-bold mt-2 mb-3" style="color:var(--brand)">Contact Us</h1>
+    <p class="text-sm mb-8" style="color:var(--ink)">Questions about an order, a custom piece, or anything else — reach us any of these ways. We usually reply within 24 hours.</p>
+    <div class="space-y-3">
+      ${rows.map(([label, val, href, icon]) => `
+        <a href="${href}" target="${href.startsWith('mailto:') ? '_self' : '_blank'}" rel="noopener noreferrer" class="flex items-center gap-4 rounded-xl p-4 depth-1 hover:depth-2 transition" style="background:#fff;border:1px solid var(--line)">
+          <span class="h-10 w-10 rounded-full flex items-center justify-center shrink-0" style="background:var(--card);color:var(--brand)">${icon}</span>
+          <span class="min-w-0">
+            <span class="block text-xs uppercase tracking-wide" style="color:var(--sand)">${label}</span>
+            <span class="block text-sm font-medium truncate" style="color:var(--ink)">${val}</span>
+          </span>
+        </a>`).join('')}
+    </div>
+    <p class="text-xs mt-8" style="color:var(--sand)">Beaded Finery by Manahil · handmade in Pakistan · <button onclick="goto('policies')" class="underline">Shipping &amp; Returns</button> · <button onclick="goto('terms')" class="underline">Terms</button> · <button onclick="goto('privacy')" class="underline">Privacy</button></p>
+  </section>`;
 }
 
 /* ---------- SHOP PAGE ---------- */
@@ -2812,6 +2980,11 @@ if (S.view === 'admin' && !adminKey()) S.view = 'store';
 const wantsAdmin = /^\/admin\/?$/i.test(location.pathname)
   || /(^|[?&])admin($|[=&])/i.test(location.search)
   || location.hash.toLowerCase() === '#admin';
+
+// a direct hit on /terms, /privacy, /policies or /contact opens straight to that page
+const PATH_ROUTES = { terms: 'terms', privacy: 'privacy', policies: 'policies', contact: 'contact' };
+const pathRoute = PATH_ROUTES[location.pathname.replace(/^\/|\/$/g, '').toLowerCase()];
+if (pathRoute) S.route = pathRoute;
 
 // transient flags reset on every fresh load
 S.feedbackSent = false;
