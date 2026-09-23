@@ -21,17 +21,26 @@
 <meta property="og:title" content="Beaded Finery | Handmade Beaded Jewelry in Pakistan" />
 <meta property="og:description" content="Handcrafted beaded earrings, jhumkas, necklaces, bracelets, rings, anklets and sets. Little details make a big difference. Delivery across Pakistan &amp; worldwide." />
 <meta property="og:url" content="https://beadedfinery.com/" />
-<meta property="og:image" content="/images/instagram/ig8.jpg" />
+<meta property="og:image" content="https://beadedfinery.com/images/og-image.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
 <meta property="og:locale" content="en_PK" />
 
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="Beaded Finery | Handmade Beaded Jewelry in Pakistan" />
 <meta name="twitter:description" content="Handcrafted beaded jewelry — earrings, jhumkas, necklaces, sets. Little details make a big difference." />
-<meta name="twitter:image" content="/images/instagram/ig8.jpg" />
+<meta name="twitter:image" content="https://beadedfinery.com/images/og-image.png" />
 
+<!-- Favicons -->
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-<link rel="apple-touch-icon" href="/favicon.svg" />
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+<link rel="shortcut icon" href="/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+<link rel="manifest" href="/site.webmanifest" />
+<meta name="msapplication-TileColor" content="#7A4667" />
+<meta name="msapplication-TileImage" content="/android-chrome-192x192.png" />
 
 <!-- Structured data -->
 <script type="application/ld+json">
@@ -70,6 +79,10 @@
   }
 }
 </script>
+
+<!-- Vercel Web Analytics — cookieless, privacy-friendly. Enable it once in the
+     Vercel dashboard (Project -> Analytics -> Enable) for this to start recording. -->
+<script defer src="/_vercel/insights/script.js"></script>
 
 <script src="https://cdn.tailwindcss.com"></script>
 <script>
@@ -498,6 +511,8 @@ const DEFAULT_STATE = {
   wishlist: [],             // [productId]
   checkoutStep: 1,
   shipping: { name:'', phone:'', email:'', address:'', city:'', postal:'', notes:'' },
+  shippingErrors: {},
+  cookieAccepted: false,
   paymentMethod: 'Credit / Debit Card',
   cardPay: { enabled: false, env: 'sandbox' },
   pickSize: {},
@@ -654,7 +669,7 @@ function renderSearchResults() {
 }
 function goto(route) {
   S.route = route;
-  if (route === 'checkout') S.checkoutStep = 1;
+  if (route === 'checkout') { S.checkoutStep = 1; S.shippingErrors = {}; }
   window.scrollTo({ top: 0, behavior: 'smooth' });
   save(); render();
 }
@@ -748,7 +763,16 @@ function LoginScreen() {
 
 /* ---- checkout ---- */
 function nextStep() {
-  if (S.checkoutStep === 1 && !validateShipping()) { toast('Please complete required fields', 'err'); render(); return; }
+  if (S.checkoutStep === 1) {
+    if (shipBlocked()) { toast(`We don't deliver to ${countryName(shipCountry())} yet`, 'err'); return; }
+    if (!validateShipping()) {
+      render();
+      const firstKey = Object.keys(S.shippingErrors)[0];
+      if (firstKey) setTimeout(() => document.getElementById('field-' + firstKey)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60);
+      toast('Please fix the highlighted fields', 'err');
+      return;
+    }
+  }
   S.checkoutStep = Math.min(3, S.checkoutStep + 1);
   window.scrollTo({ top: 0, behavior: 'smooth' });
   save(); render();
@@ -756,10 +780,26 @@ function nextStep() {
 function prevStep() { S.checkoutStep = Math.max(1, S.checkoutStep - 1); save(); render(); }
 function validateShipping() {
   const s = S.shipping;
-  if (shipBlocked()) return false;
-  return s.name.trim() && /^[0-9+\-\s()]{7,}$/.test(s.phone) && /\S+@\S+\.\S+/.test(s.email) && s.address.trim() && s.city.trim();
+  const errs = {};
+  if (!s.name.trim()) errs.name = 'Enter your full name.';
+  if (!/^[0-9+\-\s()]{7,}$/.test(s.phone.trim())) errs.phone = 'Enter a valid phone number.';
+  if (!/\S+@\S+\.\S+/.test(s.email.trim())) errs.email = 'Enter a valid email address.';
+  if (!s.city.trim()) errs.city = 'Enter your city.';
+  if (!s.address.trim()) errs.address = 'Enter your full delivery address.';
+  S.shippingErrors = errs;
+  return Object.keys(errs).length === 0;
 }
-function bindShipping(k, v) { S.shipping[k] = v; save(); }
+function bindShipping(k, v) {
+  S.shipping[k] = v;
+  if (S.shippingErrors && S.shippingErrors[k]) {
+    delete S.shippingErrors[k];
+    const input = document.getElementById('field-' + k);
+    const err = document.getElementById('err-' + k);
+    if (input) input.style.borderColor = '';
+    if (err) { err.hidden = true; err.textContent = ''; }
+  }
+  save();
+}
 async function placeOrder(btn) {
   const cc = shipCountry();
   if (shipBlocked(cc)) { toast(`We don't deliver to ${countryName(cc)} yet`, 'err'); return; }
@@ -1438,8 +1478,40 @@ const CARD_METHOD = 'Credit / Debit Card';
 /* ==================================================================== */
 /*  RENDER                                                               */
 /* ==================================================================== */
+/* ---- per-page <title> / meta description / canonical / robots ---- */
+const SITE_DESC = 'Beaded Finery by Manahil — handmade beaded jewelry in Pakistan. Shop handcrafted earrings, jhumkas, necklaces, bracelets, rings, anklets, stainless steel jewelry and sets. Flat Rs. 300 delivery across Pakistan, free over Rs. 3000, worldwide shipping.';
+const ROUTE_META = {
+  home: { title: 'Beaded Finery | Handmade Beaded Jewelry in Pakistan — Earrings, Necklaces, Jhumkas & Sets', desc: SITE_DESC, path: '/' },
+  shop: { title: 'Shop All Jewelry | Beaded Finery', desc: 'Browse handmade beaded bangles, bracelets, rings, earrings, necklaces, anklets, stainless steel jewelry and sets — all handcrafted in Pakistan.', path: '/' },
+  checkout: { title: 'Checkout | Beaded Finery', desc: 'Complete your Beaded Finery order securely.', path: '/', noindex: true },
+  terms: { title: 'Terms & Conditions | Beaded Finery', desc: 'Terms and conditions for shopping at Beaded Finery, handmade beaded jewelry from Pakistan.', path: '/terms' },
+  privacy: { title: 'Privacy Policy | Beaded Finery', desc: 'How Beaded Finery collects, uses and protects your personal information.', path: '/privacy' },
+  policies: { title: 'Shipping, Exchange, Return & Refund Policy | Beaded Finery', desc: 'Shipping charges, order cancellation, exchanges, and our return & refund policy.', path: '/policies' },
+  contact: { title: 'Contact Us | Beaded Finery', desc: 'Get in touch with Beaded Finery — email, WhatsApp, Instagram, TikTok and YouTube.', path: '/contact' },
+  notfound: { title: 'Page Not Found | Beaded Finery', desc: 'The page you are looking for could not be found.', path: '/', noindex: true },
+};
+function applyRouteMeta() {
+  const m = ROUTE_META[S.route] || ROUTE_META.home;
+  const admin = S.view === 'admin';
+  const noindex = admin || !!m.noindex;
+  document.title = admin ? 'Owner Panel | Beaded Finery' : m.title;
+  const set = (sel, attr, val) => { const el = document.querySelector(sel); if (el) el.setAttribute(attr, val); };
+  if (!admin) {
+    set('meta[name="description"]', 'content', m.desc);
+    set('meta[property="og:title"]', 'content', m.title);
+    set('meta[property="og:description"]', 'content', m.desc);
+    set('meta[name="twitter:title"]', 'content', m.title);
+    set('meta[name="twitter:description"]', 'content', m.desc);
+  }
+  set('meta[name="robots"]', 'content', noindex ? 'noindex, nofollow' : 'index, follow, max-image-preview:large');
+  const url = 'https://beadedfinery.com' + (m.path || '/');
+  set('link[rel="canonical"]', 'href', url);
+  set('meta[property="og:url"]', 'content', url);
+}
+
 function render() {
   const app = document.getElementById('app');
+  applyRouteMeta();
   if (S.showLogin) { app.innerHTML = LoginScreen(); return; }
   app.innerHTML = S.view === 'admin' ? Admin() : Store();
   requestAnimationFrame(setupReveal);
@@ -1461,13 +1533,48 @@ function Store() {
     ${S.route === 'privacy' ? PrivacyPage() : ''}
     ${S.route === 'policies' ? PoliciesPage() : ''}
     ${S.route === 'contact' ? ContactPage() : ''}
+    ${S.route === 'notfound' ? NotFoundPage() : ''}
   </main>
   ${Footer()}
   ${CartDrawer()}
   ${WishlistDrawer()}
   ${SearchPanel()}
   ${ProductModal()}
+  ${StickyMobileCTA()}
+  ${CookieBanner()}
   `;
+}
+
+function acceptCookies() { S.cookieAccepted = true; save(); render(); }
+function CookieBanner() {
+  if (S.cookieAccepted) return '';
+  return `
+  <div class="fixed inset-x-0 bottom-0 z-40 p-3 sm:p-4" style="padding-bottom:calc(.75rem + env(safe-area-inset-bottom))">
+    <div class="max-w-3xl mx-auto rounded-2xl depth-3 p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4" style="background:var(--ink);color:#fff">
+      <p class="text-xs sm:text-sm flex-1">We use cookies and your browser's local storage to remember your cart, wishlist and currency — nothing is sold to third parties. See our <button onclick="goto('privacy')" class="underline">Privacy Policy</button>.</p>
+      <button onclick="acceptCookies()" class="btn shrink-0 px-5 py-2.5 text-sm w-full sm:w-auto" style="background:var(--brand);color:#fff"><span class="btn-label">Got it</span></button>
+    </div>
+  </div>`;
+}
+
+/* mobile-only floating CTA — "Shop Now" on the home page, "View Cart" once something's in it */
+function StickyMobileCTA() {
+  if (!S.cookieAccepted || S.cartOpen || S.wishlistOpen || S.searchOpen || S.viewProduct) return '';
+  const wrap = (inner) => `
+    <div class="sm:hidden fixed inset-x-0 bottom-0 z-30 p-3" style="padding-bottom:calc(.75rem + env(safe-area-inset-bottom))">
+      ${inner}
+    </div>`;
+  if (S.route === 'shop' && S.cart.length) {
+    return wrap(`
+      <button onclick="openCart(true)" class="btn btn-primary w-full py-3.5 text-sm depth-3 flex items-center justify-between px-5">
+        <span class="btn-label">View Cart (${cartCount()})</span>
+        <span class="btn-label font-semibold">${price(cartSubtotal())}</span>
+      </button>`);
+  }
+  if (S.route === 'home') {
+    return wrap(`<button onclick="goto('shop')" class="btn btn-primary w-full py-3.5 text-sm depth-3"><span class="btn-label">Shop Now →</span></button>`);
+  }
+  return '';
 }
 
 function Wordmark(extra = '') {
@@ -2141,6 +2248,19 @@ function ContactPage() {
   </section>`;
 }
 
+function NotFoundPage() {
+  return `
+  <section class="max-w-lg mx-auto px-4 py-24 sm:py-32 text-center">
+    <p class="font-display font-bold" style="color:var(--sand);font-size:6rem;line-height:1">404</p>
+    <h1 class="font-display text-2xl sm:text-3xl font-bold mt-2" style="color:var(--brand)">This page wandered off</h1>
+    <p class="text-sm mt-3" style="color:var(--ink)">We couldn't find the page you were looking for — it may have moved, or the link might be off.</p>
+    <div class="mt-8 flex flex-wrap justify-center gap-3">
+      <button onclick="goto('home')" class="btn btn-primary px-6 py-3 text-sm"><span class="btn-label">Back to home</span></button>
+      <button onclick="goto('shop')" class="btn btn-ghost px-6 py-3 text-sm"><span class="btn-label">Browse the shop</span></button>
+    </div>
+  </section>`;
+}
+
 /* ---------- SHOP PAGE ---------- */
 function ShopPage() {
   const cats = ['All', 'Deals', ...CATEGORIES];
@@ -2233,13 +2353,20 @@ function orderSummaryCard() {
 
 function CheckoutStep1() {
   const s = S.shipping;
-  const f = (k, label, opts = {}) => `
+  const errs = S.shippingErrors || {};
+  const f = (k, label, opts = {}) => {
+    const bad = !!errs[k];
+    const attrs = `id="field-${k}" oninput="bindShipping('${k}',this.value)"`;
+    const badStyle = bad ? 'border-color:var(--err)' : '';
+    return `
     <label class="block">
       <span class="text-xs font-medium mb-1.5 block" style="color:var(--ink)">${label}${opts.req ? ' *' : ''}</span>
       ${opts.area
-        ? `<textarea rows="3" class="field" placeholder="${opts.ph||''}" oninput="bindShipping('${k}',this.value)">${s[k]||''}</textarea>`
-        : `<input value="${s[k]||''}" type="${opts.type||'text'}" class="field" placeholder="${opts.ph||''}" oninput="bindShipping('${k}',this.value)">`}
+        ? `<textarea ${attrs} rows="3" class="field" style="${badStyle}" placeholder="${opts.ph||''}">${s[k]||''}</textarea>`
+        : `<input ${attrs} value="${s[k]||''}" type="${opts.type||'text'}" class="field" style="${badStyle}" placeholder="${opts.ph||''}">`}
+      <p id="err-${k}" class="text-xs mt-1" style="color:var(--err)" ${bad ? '' : 'hidden'}>${bad ? errs[k] : ''}</p>
     </label>`;
+  };
   const cc = shipCountry();
   const blocked = shipBlocked(cc);
   const sc = shipCost(cartSubtotal(), cc);
@@ -2983,8 +3110,11 @@ const wantsAdmin = /^\/admin\/?$/i.test(location.pathname)
 
 // a direct hit on /terms, /privacy, /policies or /contact opens straight to that page
 const PATH_ROUTES = { terms: 'terms', privacy: 'privacy', policies: 'policies', contact: 'contact' };
-const pathRoute = PATH_ROUTES[location.pathname.replace(/^\/|\/$/g, '').toLowerCase()];
+const pathSlug = location.pathname.replace(/^\/+|\/+$/g, '').toLowerCase();
+const pathRoute = PATH_ROUTES[pathSlug];
 if (pathRoute) S.route = pathRoute;
+// anything else that isn't a known route or the admin path gets a branded 404
+else if (pathSlug && !wantsAdmin) S.route = 'notfound';
 
 // transient flags reset on every fresh load
 S.feedbackSent = false;
@@ -3000,6 +3130,7 @@ S.demoUndo = [];
 S.checkoutCountry = '';
 S.pickSize = {};
 S.pickColor = {};
+S.shippingErrors = {};
 S.viewProduct = null;
 S.viewImg = 0;
 S.cartOpen = S.wishlistOpen = S.searchOpen = false;

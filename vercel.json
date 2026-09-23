@@ -12,7 +12,8 @@
     { "source": "/policies", "destination": "/" },
     { "source": "/policies/", "destination": "/" },
     { "source": "/contact", "destination": "/" },
-    { "source": "/contact/", "destination": "/" }
+    { "source": "/contact/", "destination": "/" },
+    { "source": "/(.*)", "destination": "/" }
   ],
   "headers": [
     {
