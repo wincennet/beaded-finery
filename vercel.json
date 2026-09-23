@@ -4,7 +4,15 @@
   "trailingSlash": false,
   "rewrites": [
     { "source": "/admin", "destination": "/" },
-    { "source": "/admin/", "destination": "/" }
+    { "source": "/admin/", "destination": "/" },
+    { "source": "/terms", "destination": "/" },
+    { "source": "/terms/", "destination": "/" },
+    { "source": "/privacy", "destination": "/" },
+    { "source": "/privacy/", "destination": "/" },
+    { "source": "/policies", "destination": "/" },
+    { "source": "/policies/", "destination": "/" },
+    { "source": "/contact", "destination": "/" },
+    { "source": "/contact/", "destination": "/" }
   ],
   "headers": [
     {
