@@ -99,10 +99,10 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-admin-key');
-  // shipping config is the same for every visitor (unlike geo/currency), so a short
-  // public cache is safe here and cuts a Redis read on every single page load;
-  // mutations (PUT) always bypass any cache.
-  res.setHeader('Cache-Control', req.method === 'GET' ? 'public, max-age=60, stale-while-revalidate=300' : 'no-store');
+  // NOTE: vercel.json forces Cache-Control: no-store on every /api/* path at the
+  // platform level (deliberately, since that's what fixed the geo/currency-leaking
+  // bug earlier) — it wins over anything set here, so this stays no-store too.
+  res.setHeader('Cache-Control', 'no-store');
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   if (req.method === 'PUT' && !isOwner(req)) return res.status(401).json({ error: 'Unauthorized' });
