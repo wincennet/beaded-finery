@@ -19,6 +19,7 @@
  *   SITE_URL            https://beadedfinery.com     (optional; else derived from host)
  */
 import { Redis } from '@upstash/redis';
+import { clientIp, rateLimited } from './_lib.js';
 
 const ORDERS_KEY = 'beadedfinery:orders';
 const ENV = (process.env.SAFEPAY_ENV || 'sandbox').toLowerCase() === 'production' ? 'production' : 'sandbox';
@@ -67,6 +68,12 @@ export default async function handler(req, res) {
   if (!redis) return res.status(503).json({ error: 'Store database unavailable' });
 
   try {
+    // a shopper retrying a stuck payment might hit this a few times — cap it well
+    // above that so it only catches actual abuse, not a real checkout
+    if (await rateLimited(redis, `beadedfinery:rl:pay:${clientIp(req)}`, 30, 600)) {
+      return res.status(429).json({ error: 'Too many payment attempts — please wait a moment and try again.' });
+    }
+
     const { orderId } = readBody(req);
     if (!orderId) return res.status(400).json({ error: 'orderId required' });
 
@@ -78,18 +85,30 @@ export default async function handler(req, res) {
 
     const amount = Math.max(1, Math.round(Number(order.total) || 0)); // PKR, whole rupees
 
-    // 1. Create a Safepay payment session (tracker).
-    const initRes = await fetch(`${API_BASE}/order/v1/init`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client: SECRET,
-        amount,
-        currency: 'PKR',
-        environment: ENV,
-      }),
-    });
-    const initJson = await initRes.json().catch(() => ({}));
+    // 1. Create a Safepay payment session (tracker). Time-box the call to Safepay so a
+    // hung upstream request fails fast with a clear error instead of stalling the function.
+    const ac = new AbortController();
+    const timeout = setTimeout(() => ac.abort(), 8000);
+    let initRes, initJson;
+    try {
+      initRes = await fetch(`${API_BASE}/order/v1/init`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client: SECRET,
+          amount,
+          currency: 'PKR',
+          environment: ENV,
+        }),
+        signal: ac.signal,
+      });
+      initJson = await initRes.json().catch(() => ({}));
+    } catch (e) {
+      const timedOut = e && e.name === 'AbortError';
+      return res.status(504).json({ error: timedOut ? 'Safepay took too long to respond — please try again.' : 'Could not reach Safepay' });
+    } finally {
+      clearTimeout(timeout);
+    }
     // response shape has been { token } or { data: { token } } across Safepay versions
     const tracker = initJson.token || (initJson.data && (initJson.data.token || initJson.data.tracker)) || '';
     if (!initRes.ok || !tracker) {

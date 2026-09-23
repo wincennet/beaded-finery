@@ -630,7 +630,12 @@ function openSearch(v) {
   closePanels(); S.searchOpen = v; document.body.classList.toggle('no-scroll', v); render();
   if (v) requestAnimationFrame(() => document.getElementById('search-input')?.focus());
 }
-function setSearch(q) { S.searchQuery = q; renderSearchResults(); }
+let _searchDebounce = null;
+function setSearch(q) {
+  S.searchQuery = q;
+  clearTimeout(_searchDebounce);
+  _searchDebounce = setTimeout(renderSearchResults, 150);
+}
 
 /* ---- wishlist ---- */
 const inWishlist = id => S.wishlist.includes(id);
@@ -1681,7 +1686,7 @@ function Hero() {
         <button onclick="setCategory('All');setTimeout(()=>document.getElementById('best')?.scrollIntoView({behavior:'smooth'}),60)" class="link-underline text-sm font-medium" style="color:var(--ink)">View Best Sellers</button>
         <button onclick="document.getElementById('about')?.scrollIntoView({behavior:'smooth'})" class="link-underline text-sm font-medium" style="color:var(--ink)">Our Story</button>
       </div>
-      <p class="mt-10 text-[11px] tracking-[.18em] uppercase" style="color:var(--sand)">1.2k+ pieces shipped &nbsp;·&nbsp; 100% handcrafted &nbsp;·&nbsp; Worldwide shipping</p>
+      <p class="mt-10 text-[11px] tracking-[.18em] uppercase" style="color:var(--sand)">Made to order &nbsp;·&nbsp; 100% handcrafted &nbsp;·&nbsp; Worldwide shipping</p>
     </div>
   </section>`;
 }
@@ -1859,7 +1864,7 @@ function ProductCard(p, i = 0) {
     </div>
     <div class="p-4 flex flex-col gap-1 flex-1">
       <span class="text-[11px] uppercase tracking-wide" style="color:var(--sand)">${p.category}</span>
-      <h4 onclick="openProduct('${p.id}')" class="font-display text-[15px] font-semibold leading-tight cursor-pointer hover:opacity-70 transition" style="color:var(--ink)">${p.name}</h4>
+      <h3 onclick="openProduct('${p.id}')" class="font-display text-[15px] font-semibold leading-tight cursor-pointer hover:opacity-70 transition" style="color:var(--ink)">${p.name}</h3>
       ${p.desc ? `<p class="text-xs leading-snug line-clamp-2" style="color:var(--sand)">${p.desc}</p>` : ''}
       ${hasSizes ? pillRow('Size', p.sizes, selSize, 'pickCardSize') : ''}
       ${hasColors ? pillRow('Colour', p.colors, selColor, 'pickCardColor') : ''}
@@ -2272,7 +2277,7 @@ function ShopPage() {
   <section class="max-w-7xl mx-auto px-4 sm:px-6 py-10 sm:py-14">
     <div class="reveal mb-8">
       <span class="text-xs tracking-[.25em] uppercase" style="color:var(--sand)">The Shop</span>
-      <h2 class="font-display text-3xl sm:text-4xl font-bold mt-2" style="color:var(--brand)">${heading}</h2>
+      <h1 class="font-display text-3xl sm:text-4xl font-bold mt-2" style="color:var(--brand)">${heading}</h1>
       <p class="mt-1 text-sm" style="color:var(--ink)">${list.length} piece${list.length===1?'':'s'}${S.activeCategory==='Deals'?' on sale':' • hand-made to order'}</p>
     </div>
 

@@ -13,6 +13,7 @@
  * Storage: Upstash Redis. Vercel injects KV_REST_API_URL / KV_REST_API_TOKEN.
  */
 import { Redis } from '@upstash/redis';
+import { clientIp, rateLimited } from './_lib.js';
 
 const KEY = 'beadedfinery:orders';
 const MAX = 800;
@@ -100,6 +101,10 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
+      // generous cap — a real shopper never places 20 orders in 10 minutes; a bot might
+      if (await rateLimited(redis, `beadedfinery:rl:orders:${clientIp(req)}`, 20, 600)) {
+        return res.status(429).json({ error: 'Too many orders from this connection — please wait a bit and try again.' });
+      }
       const raw = readBody(req);
       if (!raw || !raw.name || !Array.isArray(raw.items) || raw.items.length === 0) {
         return res.status(400).json({ error: 'Invalid order' });

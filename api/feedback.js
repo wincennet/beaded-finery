@@ -10,6 +10,7 @@
  * Storage: Upstash Redis, key "beadedfinery:feedback".
  */
 import { Redis } from '@upstash/redis';
+import { clientIp, rateLimited } from './_lib.js';
 
 const KEY = 'beadedfinery:feedback';
 const MAX = 500;
@@ -62,6 +63,9 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
+      if (await rateLimited(redis, `beadedfinery:rl:feedback:${clientIp(req)}`, 8, 3600)) {
+        return res.status(429).json({ error: 'Too many reviews submitted — please try again later.' });
+      }
       const b = readBody(req);
       const name = String(b.name || '').trim().slice(0, 60);
       const message = String(b.message || '').trim().slice(0, 600);
