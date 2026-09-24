@@ -1696,21 +1696,73 @@ function Hero() {
   </section>`;
 }
 
+/* owner-uploaded covers for category circles / collection cards, keyed by category or collection name */
+let COVERS = {};
+async function loadCovers() {
+  try {
+    const res = await fetch('/api/covers');
+    if (!res.ok) return;
+    const j = await res.json();
+    if (j && typeof j === 'object') { COVERS = j; render(); }
+  } catch (e) {}
+}
+async function uploadCover(input, name) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  toast('Optimising photo…', 'ok');
+  try {
+    const uri = await compressImage(file, 600, 0.78, 70000);
+    const res = await fetch('/api/covers', { method: 'PUT', headers: adminHeaders(), body: JSON.stringify({ name, image: uri }) });
+    if (!res.ok) { toast(res.status === 401 ? 'Could not save — please sign in again' : 'Could not save that photo', 'err'); return; }
+    COVERS[name] = uri; render(); toast('Cover updated — live now', 'ok');
+  } catch (e) { toast("Couldn't read that image — try a JPG or PNG.", 'err'); }
+}
+async function resetCover(name) {
+  try {
+    const res = await fetch('/api/covers', { method: 'PUT', headers: adminHeaders(), body: JSON.stringify({ name, image: '' }) });
+    if (!res.ok) { toast('Could not reset — please sign in again', 'err'); return; }
+    delete COVERS[name]; render(); toast('Back to the automatic photo', 'ok');
+  } catch (e) { toast('Could not reset', 'err'); }
+}
+function coverCard(name, cat) {
+  const custom = !!COVERS[name];
+  return `
+  <div class="rounded-xl p-3 text-center" style="background:#fff;border:1px solid var(--line)">
+    <div class="h-24 w-24 mx-auto rounded-full overflow-hidden mb-2" style="border:1px solid var(--line)">${catTile(cat, name, name)}</div>
+    <p class="text-xs font-medium mb-2 leading-tight" style="color:var(--ink)">${name}</p>
+    <label class="btn btn-ghost px-3 py-1.5 text-xs cursor-pointer"><span class="btn-label">📷 ${custom ? 'Replace' : 'Upload'}</span>
+      <input type="file" accept="image/*" class="hidden" onchange="uploadCover(this,'${name}')"></label>
+    ${custom ? `<button type="button" onclick="resetCover('${name}')" class="block mx-auto mt-1.5 text-[11px] underline" style="color:var(--sand)">Use automatic photo</button>` : `<p class="text-[11px] mt-1.5" style="color:var(--sand)">Automatic photo</p>`}
+  </div>`;
+}
+function coversAdminSection() {
+  return `
+  <div class="rounded-2xl p-5 depth-1" style="background:#fff;border:1px solid var(--line)">
+    <h4 class="font-display font-bold mb-1" style="color:var(--brand)">Category &amp; collection covers</h4>
+    <p class="text-xs mb-4" style="color:var(--sand)">The round pictures under "Shop by Category" and the big cards under "Shop Our Collections". Upload any photo (a square-ish crop looks best). It goes live straight away — no Save button needed. Without one, the site uses a photo of a product in that category.</p>
+    <p class="text-xs font-medium uppercase tracking-wide mb-2" style="color:var(--sand)">Categories</p>
+    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">${CATEGORIES.map(c => coverCard(c, c)).join('')}</div>
+    <p class="text-xs font-medium uppercase tracking-wide mb-2" style="color:var(--sand)">Collections</p>
+    <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">${COLLECTIONS.map(c => coverCard(c.name, c.cat)).join('')}</div>
+  </div>`;
+}
+
 /* real product photo for a category (first in-stock product that has one) - used for category/collection tiles */
 function catPhoto(cat) {
+  if (COVERS[cat]) return COVERS[cat];
   const withPhoto = S.products.filter(p => p.category === cat && productImages(p).length);
   const pick = withPhoto.find(p => p.stock !== false) || withPhoto[0];
   return pick ? productImages(pick)[0] : null;
 }
-function catTile(cat, alt) {
-  const src = catPhoto(cat);
+function catTile(cat, alt, name) {
+  const src = (name && COVERS[name]) || catPhoto(cat);
   return src
     ? `<img src="${src}" alt="${alt}" loading="lazy" class="w-full h-full object-cover photo-crop">`
     : `<span class="w-full h-full flex items-center justify-center font-display text-4xl" style="background:linear-gradient(150deg,var(--card),#D9C9CF);color:var(--brand)">${String(cat).charAt(0)}</span>`;
 }
 
 function CollectionsGrid() {
-  const cols = COLLECTIONS.filter(c => catPhoto(c.cat));
+  const cols = COLLECTIONS.filter(c => COVERS[c.name] || catPhoto(c.cat));
   if (cols.length < 2) return '';
   return `
   <section class="max-w-7xl mx-auto px-4 sm:px-6 py-16 sm:py-24">
@@ -1718,7 +1770,7 @@ function CollectionsGrid() {
     <div class="grid grid-cols-2 ${cols.length % 3 === 0 ? 'lg:grid-cols-3' : 'lg:grid-cols-2'} gap-3 sm:gap-5 scene">
       ${cols.map((col,i) => `
         <button onclick="setCategory('${col.cat}')" class="reveal tilt group relative rounded-2xl overflow-hidden depth-1 hover:depth-3 aspect-[4/5] sm:aspect-square" style="animation-delay:${i*70}ms">
-          ${catTile(col.cat, col.name + ' - handmade beaded ' + col.cat.toLowerCase() + ' by Beaded Finery')}
+          ${catTile(col.cat, col.name + ' - handmade beaded ' + col.cat.toLowerCase() + ' by Beaded Finery', col.name)}
           <div class="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent"></div>
           <div class="absolute left-4 bottom-4 text-left">
             <p class="text-white font-display text-lg sm:text-xl font-semibold drop-shadow">${col.name}</p>
@@ -1740,7 +1792,7 @@ function CategoryCarousel() {
             <span class="cat-ring h-24 w-24 sm:h-28 sm:w-28 rounded-full flex items-center justify-center depth-1 ring-2 ring-white text-white font-display text-2xl" style="background:linear-gradient(150deg,var(--err),var(--brand-hover))">%</span>
             <span class="text-xs sm:text-sm font-medium text-center leading-tight" style="color:var(--err)">Deals</span>
           </button>` : ''}
-        ${CATEGORIES.filter(c => S.products.some(p => p.category === c)).map((c,i) => `
+        ${CATEGORIES.filter(c => COVERS[c] || S.products.some(p => p.category === c)).map((c,i) => `
           <button onclick="setCategory('${c}')" class="cat-item reveal snap-start shrink-0 w-28 sm:w-32 flex flex-col items-center gap-3 group" style="animation-delay:${i*60}ms">
             <span class="cat-ring h-24 w-24 sm:h-28 sm:w-28 rounded-full overflow-hidden depth-1 ring-2 ring-white block">
               ${catTile(c, c + ' - handmade beaded jewellery by Beaded Finery')}
@@ -3065,6 +3117,7 @@ function AdminHomepage() {
       fallback: topProduct,
       emptyNote: 'Showing an automatic photo — upload one below to replace it.',
     })}
+    ${coversAdminSection()}
     <button onclick="saveSettings(this)" class="btn btn-primary px-7 py-3 text-sm"><span class="btn-label">Save to website</span></button>
     <p class="text-xs" style="color:var(--sand)">Changes show on the live site a moment after you save.</p>
   </div>`;
@@ -3214,6 +3267,7 @@ if (wantsAdmin) enterAdmin({ fromUrl: true });
 loadPayConfig();
 loadGeo();
 loadSettings();
+loadCovers();
 loadProducts();
 syncOrders();
 loadReviews();
