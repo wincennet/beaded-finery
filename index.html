@@ -423,25 +423,26 @@ function motif(cat, key) {
     <rect width="400" height="400" fill="url(#${g}-s)"/>`;
   const stroke = '#7A4667', bead = '#3A2A32';
   const shapes = {
-    'Bangles': `<circle cx="200" cy="205" r="120" fill="none" stroke="${stroke}" stroke-width="14" opacity=".85"/>
-      <circle cx="200" cy="205" r="95" fill="none" stroke="#F7F4EE" stroke-width="6" opacity=".7"/>
-      ${beadRing(200,205,120,18)}`,
-    'Bracelets': `<path d="M70 210 Q200 90 330 210 Q200 300 70 210 Z" fill="none" stroke="${stroke}" stroke-width="12"/>
-      ${beadRow(90,210,320,210,12)}`,
-    'Rings/Ringlets': `<circle cx="200" cy="230" r="80" fill="none" stroke="${stroke}" stroke-width="16"/>
-      <path d="M200 150 l26 -48 h-52 z" fill="#F7F4EE" stroke="${stroke}" stroke-width="6"/>
-      <circle cx="200" cy="95" r="15" fill="${bead}"/>`,
-    'Earrings': `${earring(150)}${earring(250)}`,
-    'Necklaces': `<path d="M60 90 Q200 300 340 90" fill="none" stroke="${stroke}" stroke-width="10"/>
-      ${beadArc()}<circle cx="200" cy="250" r="22" fill="${bead}"/><circle cx="200" cy="250" r="10" fill="#F7F4EE"/>`,
-    'Anklets': `<path d="M60 170 Q200 120 340 170 Q200 250 60 170 Z" fill="none" stroke="${stroke}" stroke-width="9"/>
-      ${beadRow(80,170,320,170,10)}<circle cx="200" cy="235" r="12" fill="${bead}"/>`,
-    'Stainless steel jewelry': `<rect x="120" y="120" width="160" height="160" rx="26" fill="none" stroke="${stroke}" stroke-width="14"/>
-      <rect x="120" y="120" width="160" height="160" rx="26" fill="none" stroke="#F7F4EE" stroke-width="5" opacity=".6"/>
-      <circle cx="200" cy="200" r="34" fill="#F7F4EE" opacity=".55"/>`,
-    'Sets': `<circle cx="150" cy="160" r="55" fill="none" stroke="${stroke}" stroke-width="11"/>
-      <circle cx="255" cy="235" r="42" fill="none" stroke="${stroke}" stroke-width="11"/>
-      <path d="M120 250 q40 40 90 20" fill="none" stroke="${stroke}" stroke-width="8"/>`,
+    'Bangles': [150,205,260].map((y,i) => `<ellipse cx="200" cy="${y}" rx="112" ry="40" fill="none" stroke="${stroke}" stroke-width="17" opacity="${i===1?1:.9}"/>
+      <path d="M118 ${y-6} Q200 ${y-42} 282 ${y-6}" fill="none" stroke="#F7F4EE" stroke-width="5" stroke-linecap="round" opacity=".75"/>`).join(''),
+    'Bracelets': `<ellipse cx="200" cy="205" rx="118" ry="72" fill="none" stroke="${stroke}" stroke-width="4" opacity=".55"/>
+      ${ellipseBeads(200,205,118,72,16,14)}`,
+    'Rings/Ringlets': `<circle cx="200" cy="255" r="74" fill="none" stroke="${stroke}" stroke-width="18"/>
+      <path d="M200 88 L242 128 L200 182 L158 128 Z" fill="#F7F4EE" stroke="${stroke}" stroke-width="8" stroke-linejoin="round"/>
+      <path d="M158 128 H242 M182 128 L200 182 L218 128" fill="none" stroke="${stroke}" stroke-width="4" stroke-linejoin="round" opacity=".7"/>`,
+    'Earrings': `${jhumka(130)}${jhumka(270)}`,
+    'Necklaces': `<path d="M70 90 Q200 330 330 90" fill="none" stroke="${stroke}" stroke-width="5" opacity=".6"/>
+      ${curveBeads(70,90,200,330,330,90,13,10)}${drop(200,215,1)}`,
+    'Anklets': `<ellipse cx="200" cy="165" rx="112" ry="52" fill="none" stroke="${stroke}" stroke-width="4" opacity=".55"/>
+      ${ellipseBeads(200,165,112,52,14,9)}
+      ${[150,200,250].map(x => { const y = 165 + 52*Math.sqrt(1-Math.pow((x-200)/112,2)); return `<path d="M${x} ${y} v38" stroke="${stroke}" stroke-width="5"/><circle cx="${x}" cy="${y+50}" r="13" fill="${bead}"/><circle cx="${x-4}" cy="${y+46}" r="4" fill="#F7F4EE" opacity=".8"/>`; }).join('')}`,
+    'Stainless steel jewelry': `<rect x="80" y="150" width="160" height="90" rx="45" fill="none" stroke="${stroke}" stroke-width="16"/>
+      <rect x="160" y="170" width="160" height="90" rx="45" fill="none" stroke="${stroke}" stroke-width="16"/>
+      <path d="M100 168 Q160 152 215 168 M180 188 Q240 172 300 188" fill="none" stroke="#F7F4EE" stroke-width="5" stroke-linecap="round" opacity=".8"/>
+      <path d="M300 80 l7 20 20 7 -20 7 -7 20 -7 -20 -20 -7 20 -7 z" fill="#F7F4EE" stroke="${stroke}" stroke-width="4" stroke-linejoin="round"/>`,
+    'Sets': `<path d="M90 80 Q200 220 310 80" fill="none" stroke="${stroke}" stroke-width="5" opacity=".6"/>
+      ${curveBeads(90,80,200,220,310,80,9,8)}${drop(200,150,.7)}
+      ${drop(135,235,.9)}${drop(265,235,.9)}`,
     'Keychains': `<circle cx="150" cy="140" r="34" fill="none" stroke="${stroke}" stroke-width="12"/>
       <path d="M150 174 v40 M150 200 l24 0 M150 214 l18 0" stroke="${stroke}" stroke-width="10" stroke-linecap="round"/>
       <path d="M182 130 h70 M240 130 v22 M258 130 v14" stroke="${stroke}" stroke-width="12" stroke-linecap="round"/>
@@ -451,6 +452,10 @@ function motif(cat, key) {
       <path d="M120 250 q45 35 95 12" fill="none" stroke="${stroke}" stroke-width="9"/>
       ${beadRing(255,255,42,10)}`,
   };
+  function ellipseBeads(cx,cy,rx,ry,c,r){let o='';for(let i=0;i<c;i++){const a=(i/c)*Math.PI*2;o+=`<circle cx="${cx+Math.cos(a)*rx}" cy="${cy+Math.sin(a)*ry}" r="${r}" fill="${i%2?'#F7F4EE':stroke}" stroke="${stroke}" stroke-width="3"/>`;}return o;}
+  function curveBeads(x0,y0,cx,cy,x2,y2,c,r){let o='';for(let i=0;i<=c;i++){const t=i/c,u=1-t,x=u*u*x0+2*u*t*cx+t*t*x2,y=u*u*y0+2*u*t*cy+t*t*y2;o+=`<circle cx="${x}" cy="${y}" r="${r}" fill="${i%2?'#F7F4EE':stroke}" stroke="${stroke}" stroke-width="3"/>`;}return o;}
+  function drop(x,y,k){return `<path d="M${x} ${y} C${x+38*k} ${y+40*k} ${x+38*k} ${y+82*k} ${x} ${y+92*k} C${x-38*k} ${y+82*k} ${x-38*k} ${y+40*k} ${x} ${y}Z" fill="#F7F4EE" stroke="${stroke}" stroke-width="7" stroke-linejoin="round"/><circle cx="${x}" cy="${y+8*k}" r="${8*k}" fill="${bead}"/>`;}
+  function jhumka(x){let f='';for(const o of [-30,-15,0,15,30]){const e=o===0?34:28;f+=`<path d="M${x+o} 200 v${e-8}" stroke="${stroke}" stroke-width="4"/><circle cx="${x+o}" cy="${200+e}" r="8" fill="${bead}"/>`;}return `<circle cx="${x}" cy="78" r="12" fill="none" stroke="${stroke}" stroke-width="6"/><path d="M${x} 90 v56" stroke="${stroke}" stroke-width="6"/><path d="M${x-46} 200 A46 46 0 0 1 ${x+46} 200 Z" fill="#F7F4EE" stroke="${stroke}" stroke-width="7" stroke-linejoin="round"/><path d="M${x-26} 190 a26 26 0 0 1 26 -26" fill="none" stroke="${stroke}" stroke-width="4" opacity=".6"/>${f}`;}
   function beadRing(cx,cy,r,c){let o='';for(let i=0;i<c;i++){const a=(i/c)*Math.PI*2;o+=`<circle cx="${cx+Math.cos(a)*r}" cy="${cy+Math.sin(a)*r}" r="7" fill="${bead}"/>`;}return o;}
   function beadRow(x1,y1,x2,y2,c){let o='';for(let i=0;i<c;i++){const t=i/(c-1);o+=`<circle cx="${x1+(x2-x1)*t}" cy="${y1+(y2-y1)*t}" r="6" fill="${bead}"/>`;}return o;}
   function beadArc(){let o='';for(let i=0;i<=12;i++){const t=i/12,x=60+280*t,y=90+Math.sin(t*Math.PI)*180;o+=`<circle cx="${x}" cy="${y}" r="6" fill="${bead}"/>`;}return o;}
