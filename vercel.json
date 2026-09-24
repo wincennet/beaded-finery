@@ -13,7 +13,7 @@
     { "source": "/policies/", "destination": "/" },
     { "source": "/contact", "destination": "/" },
     { "source": "/contact/", "destination": "/" },
-    { "source": "/(.*)", "destination": "/" }
+    { "source": "/((?!_vercel/).*)", "destination": "/" }
   ],
   "headers": [
     {
