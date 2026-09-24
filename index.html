@@ -56,7 +56,7 @@
   "telephone": "+92-324-4896469",
   "priceRange": "Rs. 500 – Rs. 6000",
   "areaServed": ["Pakistan", "Worldwide"],
-  "address": { "@type": "PostalAddress", "addressCountry": "PK" },
+  "address": { "@type": "PostalAddress", "addressLocality": "Lahore", "addressCountry": "PK" },
   "sameAs": [
     "https://www.instagram.com/beadedfineryby_manahil/",
     "https://www.tiktok.com/@beadedfinery",
@@ -2061,7 +2061,7 @@ function Footer() {
           <li><button onclick="document.getElementById('about')?.scrollIntoView({behavior:'smooth'})" class="hover:text-white transition">About</button></li>
           <li><button onclick="if(S.route!=='home'){goto('home');}setTimeout(()=>document.getElementById('feedback')?.scrollIntoView({behavior:'smooth'}),120)" class="hover:text-white transition text-left">Leave feedback</button></li>
           <li><a href="${WA_URL}" target="_blank" rel="noopener noreferrer" class="hover:text-white transition">WhatsApp ${PHONE}</a></li>
-          <li><a href="mailto:beadedfinerybymanahil@gmail.com" class="hover:text-white transition">beadedfinerybymanahil@gmail.com</a></li>
+          <li><a href="mailto:beadedfinerybymanahil@gmail.com" class="hover:text-white transition">beadedfinerybymanahil@gmail.com</a></li><li>Lahore, Pakistan</li>
         </ul>
       </div>
       <div>
@@ -2149,7 +2149,7 @@ function TermsPage() {
       <p>These Terms and Conditions are governed by the laws of Pakistan, and any dispute is subject to the exclusive jurisdiction of the courts of Pakistan.</p>
     `)}
     ${legalSection(8, 'Contact', `
-      <p>Questions about these terms? Email <a href="mailto:beadedfinerybymanahil@gmail.com" class="underline" style="color:var(--brand)">beadedfinerybymanahil@gmail.com</a> or WhatsApp <a href="${WA_URL}" target="_blank" rel="noopener noreferrer" class="underline" style="color:var(--brand)">${PHONE}</a>.</p>
+      <p>Questions about these terms? Email <a href="mailto:beadedfinerybymanahil@gmail.com" class="underline" style="color:var(--brand)">beadedfinerybymanahil@gmail.com</a> or WhatsApp <a href="${WA_URL}" target="_blank" rel="noopener noreferrer" class="underline" style="color:var(--brand)">${PHONE}</a>. We're based in Lahore, Pakistan.</p>
     `)}
   </section>`;
 }
@@ -2190,7 +2190,7 @@ function PrivacyPage() {
       <p>You can ask us at any time what information we hold about you, or ask us to delete it (where we're not legally required to keep it), by emailing beadedfinerybymanahil@gmail.com.</p>
     `)}
     ${legalSection(8, 'Contact', `
-      <p>Questions about this policy? Email <a href="mailto:beadedfinerybymanahil@gmail.com" class="underline" style="color:var(--brand)">beadedfinerybymanahil@gmail.com</a> or WhatsApp <a href="${WA_URL}" target="_blank" rel="noopener noreferrer" class="underline" style="color:var(--brand)">${PHONE}</a>.</p>
+      <p>Questions about this policy? Email <a href="mailto:beadedfinerybymanahil@gmail.com" class="underline" style="color:var(--brand)">beadedfinerybymanahil@gmail.com</a> or WhatsApp <a href="${WA_URL}" target="_blank" rel="noopener noreferrer" class="underline" style="color:var(--brand)">${PHONE}</a>. We're based in Lahore, Pakistan.</p>
     `)}
   </section>`;
 }
@@ -2220,7 +2220,7 @@ function PoliciesPage() {
       ])}
     `)}
     ${legalSection(null, 'Contact Us', `
-      <p>Email <a href="mailto:beadedfinerybymanahil@gmail.com" class="underline" style="color:var(--brand)">beadedfinerybymanahil@gmail.com</a> or WhatsApp <a href="${WA_URL}" target="_blank" rel="noopener noreferrer" class="underline" style="color:var(--brand)">${PHONE}</a>.</p>
+      <p>Email <a href="mailto:beadedfinerybymanahil@gmail.com" class="underline" style="color:var(--brand)">beadedfinerybymanahil@gmail.com</a> or WhatsApp <a href="${WA_URL}" target="_blank" rel="noopener noreferrer" class="underline" style="color:var(--brand)">${PHONE}</a>. We're based in Lahore, Pakistan.</p>
     `)}
   </section>`;
 }
@@ -2238,7 +2238,7 @@ function ContactPage() {
     ${legalBack()}
     <span class="text-xs tracking-[.25em] uppercase" style="color:var(--sand)">Get in touch</span>
     <h1 class="font-display text-3xl sm:text-4xl font-bold mt-2 mb-3" style="color:var(--brand)">Contact Us</h1>
-    <p class="text-sm mb-8" style="color:var(--ink)">Questions about an order, a custom piece, or anything else — reach us any of these ways. We usually reply within 24 hours.</p>
+    <p class="text-sm mb-8" style="color:var(--ink)">Questions about an order, a custom piece, or anything else — reach us any of these ways. We're based in Lahore, Pakistan, and usually reply within 24 hours.</p>
     <div class="space-y-3">
       ${rows.map(([label, val, href, icon]) => `
         <a href="${href}" target="${href.startsWith('mailto:') ? '_self' : '_blank'}" rel="noopener noreferrer" class="flex items-center gap-4 rounded-xl p-4 depth-1 hover:depth-2 transition" style="background:#fff;border:1px solid var(--line)">
