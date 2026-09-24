@@ -1714,7 +1714,7 @@ function CategoryCarousel() {
   <section class="py-10 sm:py-14" style="background:var(--card)">
     <div class="max-w-7xl mx-auto px-4 sm:px-6">
       ${sectionHead('Shop by Category', 'Find your next favourite piece.')}
-      <div class="flex gap-5 sm:gap-8 overflow-x-auto pb-4 -mx-1 px-1 snap-x">
+      <div class="flex gap-5 sm:gap-8 overflow-x-auto pt-5 pb-10 -mt-5 -mb-6 -mx-3 px-3 snap-x">
         ${S.products.some(p => p.oldPrice && p.oldPrice > p.price) ? `
           <button onclick="setCategory('Deals')" class="cat-item reveal snap-start shrink-0 w-28 sm:w-32 flex flex-col items-center gap-3 group">
             <span class="cat-ring h-24 w-24 sm:h-28 sm:w-28 rounded-full flex items-center justify-center depth-1 ring-2 ring-white text-white font-display text-2xl" style="background:linear-gradient(150deg,var(--err),var(--brand-hover))">%</span>
