@@ -1,22 +1,23 @@
 /**
- * Beaded Finery — card payment (Safepay hosted checkout)
+ * Beaded Finery — card payment (Safepay Express Checkout / hosted page)
  *
- * GET  /api/pay            -> { enabled, env }         [public]  frontend uses this to
- *                                                                show the "Card" option
- * POST /api/pay { orderId }-> { url }                  [public]  creates a Safepay
- *                                                                checkout session for an
- *                                                                order that already
- *                                                                exists in Redis, returns
- *                                                                the URL to redirect the
- *                                                                shopper to.
+ * GET  /api/pay             -> { enabled, env }   [public]  frontend uses this to show the "Card" option
+ * POST /api/pay { orderId } -> { url }            [public]  creates a Safepay payment session for an
+ *                                                           order that already exists in Redis and
+ *                                                           returns the hosted-checkout URL.
  *
- * The shopper pays on Safepay's PCI-compliant page, then Safepay redirects to
- * /api/pay-callback which verifies the signature and marks the order paid.
+ * Flow (https://safepay-docs.netlify.app/build-your-integration/express-checkout):
+ *   1. POST {api}/order/payments/v3/        -> tracker token        (secret key header + public key in body)
+ *   2. POST {api}/client/passport/v1/token  -> short-lived "tbt"    (secret key header)
+ *   3. redirect shopper to {checkout}/embedded/?tracker=..&tbt=..&redirect_url=..&cancel_url=..
+ *   4. Safepay sends the shopper back to /api/pay-callback?tracker=..  -> verified there.
  *
- * Env vars (set in Vercel once the merchant account is approved):
- *   SAFEPAY_ENV         "sandbox" | "production"     (default "sandbox")
- *   SAFEPAY_SECRET_KEY  sec_xxxxxxxx                 (from the Safepay dashboard)
- *   SITE_URL            https://beadedfinery.com     (optional; else derived from host)
+ * Env vars (Vercel -> Settings -> Environment Variables):
+ *   SAFEPAY_SECRET_KEY   server-side secret key from the Safepay dashboard   (required)
+ *   SAFEPAY_PUBLIC_KEY   client-side / public key from the same dashboard    (required)
+ *   SAFEPAY_ENV          "sandbox" | "production"            (default "sandbox")
+ *   SAFEPAY_INTENT       "CYBERSOURCE" (default) or whatever Safepay enables for the merchant
+ *   SITE_URL             https://beadedfinery.com            (optional; else derived from host)
  */
 import { Redis } from '@upstash/redis';
 import { clientIp, rateLimited } from './_lib.js';
@@ -24,14 +25,12 @@ import { clientIp, rateLimited } from './_lib.js';
 const ORDERS_KEY = 'beadedfinery:orders';
 const ENV = (process.env.SAFEPAY_ENV || 'sandbox').toLowerCase() === 'production' ? 'production' : 'sandbox';
 const SECRET = process.env.SAFEPAY_SECRET_KEY || '';
-const ENABLED = !!SECRET;
+const PUBLIC = process.env.SAFEPAY_PUBLIC_KEY || '';
+const INTENT = (process.env.SAFEPAY_INTENT || 'CYBERSOURCE').toUpperCase();
+const ENABLED = !!(SECRET && PUBLIC);
 
-const API_BASE = ENV === 'production'
-  ? 'https://api.getsafepay.com'
-  : 'https://sandbox.api.getsafepay.com';
-const COMPONENTS_URL = ENV === 'production'
-  ? 'https://www.getsafepay.com/components'
-  : 'https://sandbox.api.getsafepay.com/components';
+const API_BASE = ENV === 'production' ? 'https://api.getsafepay.com' : 'https://sandbox.api.getsafepay.com';
+const CHECKOUT_BASE = ENV === 'production' ? 'https://getsafepay.com/embedded/' : 'https://sandbox.api.getsafepay.com/embedded/';
 
 let redis = null;
 try {
@@ -50,6 +49,24 @@ function siteUrl(req) {
   const host = req.headers['x-forwarded-host'] || req.headers.host;
   const proto = req.headers['x-forwarded-proto'] || 'https';
   return `${proto}://${host}`;
+}
+
+/** POST JSON to Safepay with the merchant secret, time-boxed so a hung upstream fails fast. */
+async function safepayPost(path, body) {
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 8000);
+  try {
+    const r = await fetch(`${API_BASE}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-SFPY-MERCHANT-SECRET': SECRET },
+      body: JSON.stringify(body || {}),
+      signal: ac.signal,
+    });
+    const json = await r.json().catch(() => ({}));
+    return { ok: r.ok, status: r.status, json };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export default async function handler(req, res) {
@@ -83,50 +100,60 @@ export default async function handler(req, res) {
     if (!order) return res.status(404).json({ error: 'Order not found' });
     if (order.paid) return res.status(409).json({ error: 'Order already paid' });
 
-    const amount = Math.max(1, Math.round(Number(order.total) || 0)); // PKR, whole rupees
+    // Safepay wants the currency's minor unit: PKR is sent in paisa (1 rupee = 100 paisa).
+    const rupees = Math.max(1, Math.round(Number(order.total) || 0));
+    const amount = rupees * 100;
 
-    // 1. Create a Safepay payment session (tracker). Time-box the call to Safepay so a
-    // hung upstream request fails fast with a clear error instead of stalling the function.
-    const ac = new AbortController();
-    const timeout = setTimeout(() => ac.abort(), 8000);
-    let initRes, initJson;
+    // 1. payment session -> tracker
+    let session;
     try {
-      initRes = await fetch(`${API_BASE}/order/v1/init`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          client: SECRET,
-          amount,
-          currency: 'PKR',
-          environment: ENV,
-        }),
-        signal: ac.signal,
+      session = await safepayPost('/order/payments/v3/', {
+        merchant_api_key: PUBLIC,
+        intent: INTENT,
+        mode: 'payment',
+        currency: 'PKR',
+        amount,
+        metadata: { order_id: order.id },
       });
-      initJson = await initRes.json().catch(() => ({}));
     } catch (e) {
       const timedOut = e && e.name === 'AbortError';
       return res.status(504).json({ error: timedOut ? 'Safepay took too long to respond — please try again.' : 'Could not reach Safepay' });
-    } finally {
-      clearTimeout(timeout);
     }
-    // response shape has been { token } or { data: { token } } across Safepay versions
-    const tracker = initJson.token || (initJson.data && (initJson.data.token || initJson.data.tracker)) || '';
-    if (!initRes.ok || !tracker) {
-      return res.status(502).json({ error: 'Safepay session failed', detail: initJson });
+    const tracker = session.json && session.json.data && session.json.data.tracker && session.json.data.tracker.token;
+    if (!session.ok || !tracker) {
+      return res.status(502).json({ error: 'Safepay session failed', detail: session.json });
     }
 
-    // 2. Build the hosted-checkout URL to send the shopper to.
+    // 2. short-lived auth token for the hosted page
+    let pass;
+    try {
+      pass = await safepayPost('/client/passport/v1/token', {});
+    } catch (e) {
+      const timedOut = e && e.name === 'AbortError';
+      return res.status(504).json({ error: timedOut ? 'Safepay took too long to respond — please try again.' : 'Could not reach Safepay' });
+    }
+    const tbt = pass.json && pass.json.data;
+    if (!pass.ok || typeof tbt !== 'string' || !tbt) {
+      return res.status(502).json({ error: 'Safepay auth token failed', detail: pass.json });
+    }
+
+    // remember which tracker belongs to this order — the callback finds the order by it
+    order.safepayTracker = tracker;
+    await redis.set(ORDERS_KEY, list);
+
+    // 3. hosted-checkout URL. redirect_url deliberately has no query string of its own:
+    // Safepay appends ?tracker=... to it on return.
     const base = siteUrl(req);
     const params = new URLSearchParams({
-      env: ENV,
-      beacon: tracker,
-      source: 'beadedfinery',
-      order_id: order.id,
+      environment: ENV,
+      tracker,
+      tbt,
+      source: 'hosted',
       redirect_url: `${base}/api/pay-callback`,
       cancel_url: `${base}/?checkout=cancelled&order=${encodeURIComponent(order.id)}`,
     });
 
-    return res.status(200).json({ url: `${COMPONENTS_URL}?${params.toString()}`, tracker });
+    return res.status(200).json({ url: `${CHECKOUT_BASE}?${params.toString()}`, tracker });
   } catch (e) {
     return res.status(500).json({ error: String(e && e.message ? e.message : e) });
   }
