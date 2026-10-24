@@ -1398,6 +1398,34 @@ function setOrderStatus(id, status) {
   o.status = status; save(); render();
   fetch('/api/orders', { method: 'PATCH', headers: adminHeaders(), body: JSON.stringify({ id, status }) }).catch(() => {});
 }
+/* ---- WhatsApp the customer from the admin: opens WhatsApp with a ready-written message ---- */
+function waPhone(raw) {
+  let d = String(raw || '').replace(/[^\d+]/g, '');
+  const plus = d.startsWith('+');
+  d = d.replace(/\D/g, '');
+  if (d.startsWith('00')) d = d.slice(2);                      // 0092… -> 92…
+  else if (!plus && d.startsWith('0') && d.length === 11) d = '92' + d.slice(1);   // 0300 1234567 -> 92300 1234567
+  return d.length >= 9 && d.length <= 15 ? d : '';
+}
+function waCustomerMessage(o) {
+  const first = String(o.name || '').trim().split(/\s+/)[0] || 'there';
+  const lines = (o.items || []).map(i => `• ${i.name}${[i.size, i.color].filter(Boolean).length ? ' (' + [i.size, i.color].filter(Boolean).join(', ') + ')' : ''} × ${i.qty}`).join('\n');
+  const dest = [o.address, o.city].filter(Boolean).join(', ');
+  const head = `Assalam o Alaikum ${first}! 🌸 This is Beaded Finery.\n\nOrder ${o.id}:\n${lines}\nTotal: ${money(o.total || 0)}\n`;
+  if (o.status === 'Shipped') return `${head}\nGood news — your order has been dispatched! Thank you for shopping with Beaded Finery 💕`;
+  if (o.method === COD_METHOD && o.status !== 'Processing') {
+    return `${head}Payment: Cash on delivery\nDelivery to: ${dest}\n\nPlease reply *YES* to confirm your order and address, and we'll get it ready for dispatch. Please keep ${money(o.total || 0)} ready in cash for the courier.`;
+  }
+  if (o.paid || o.status === 'Processing') {
+    return `${head}\nWe've received your order${o.paid ? ' and payment' : ''} and we're getting it ready. Thank you for shopping with Beaded Finery 💕`;
+  }
+  return `${head}\nThank you for your order! To confirm it, please send a screenshot of your ${o.method || 'payment'} of ${money(o.total || 0)} here (with your order ID ${o.id}). Once we see it, we'll start on your order.`;
+}
+function waCustomerLink(o) {
+  const ph = waPhone(o.phone);
+  return ph ? `https://wa.me/${ph}?text=${encodeURIComponent(waCustomerMessage(o))}` : '';
+}
+
 async function recheckPayment(id, btn) {
   if (btn) btn.classList.add('loading');
   try {
@@ -2981,7 +3009,8 @@ function AdminOrders() {
             <button onclick="setOrderStatus('${o.id}','${st}')" class="text-[11px] font-semibold rounded-full px-3 py-1.5 transition-all duration-300 ${
               o.status === st ? 'text-white depth-1 scale-105' : ''
             }" style="${o.status === st ? `background:${badge(st)}` : 'background:var(--canvas);color:var(--ink);border:1px solid var(--line)'}">${st}</button>`).join('')}
-          <button onclick="cycleOrderStatus('${o.id}')" class="ml-auto text-[11px] font-medium rounded-full px-3 py-1.5" style="background:var(--brand);color:#fff">Advance →</button>
+          ${waCustomerLink(o) ? `<a href="${waCustomerLink(o)}" target="_blank" rel="noopener noreferrer" title="Opens WhatsApp with a ready-written message" class="ml-auto inline-flex items-center gap-1.5 text-[11px] font-medium rounded-full px-3 py-1.5" style="background:var(--ok);color:#fff">${I.whatsapp}<span>Message customer</span></a>` : ''}
+          <button onclick="cycleOrderStatus('${o.id}')" class="${waCustomerLink(o) ? '' : 'ml-auto '}text-[11px] font-medium rounded-full px-3 py-1.5" style="background:var(--brand);color:#fff">Advance →</button>
           <button onclick="deleteOrder('${o.id}')" title="Delete order" class="p-1.5 rounded-lg hover:bg-black/5" style="color:var(--err)">${I.trash}</button>
         </div>
       </div>`).join('')}
