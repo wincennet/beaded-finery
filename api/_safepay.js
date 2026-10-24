@@ -17,7 +17,7 @@ const API_BASE = ENV === 'production' ? 'https://api.getsafepay.com' : 'https://
 
 export const TRACKER_RE = /^[A-Za-z0-9_-]{4,120}$/;
 
-/** Ask Safepay for the tracker's real state. Returns { ended } or null if unreachable. */
+/** Ask Safepay for the tracker's real state. Returns { ended, state, status } ('status' = HTTP code) or null if unreachable. */
 async function fetchTracker(tracker) {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 8000);
@@ -26,10 +26,10 @@ async function fetchTracker(tracker) {
       headers: { 'X-SFPY-MERCHANT-SECRET': SECRET },
       signal: ac.signal,
     });
-    if (!r.ok) return null;
+    if (!r.ok) return { ended: false, state: '', status: r.status };
     const j = await r.json().catch(() => ({}));
-    const state = j && j.data && j.data.tracker && j.data.tracker.state;
-    return { ended: state === 'TRACKER_ENDED' };
+    const state = (j && j.data && j.data.tracker && j.data.tracker.state) || '';
+    return { ended: state === 'TRACKER_ENDED', state, status: r.status };
   } catch (e) {
     return null;
   } finally {
@@ -38,12 +38,13 @@ async function fetchTracker(tracker) {
 }
 
 /**
- * Returns { orderId, verified }.
+ * Returns { orderId, verified, tracker, state, status }.
  *   orderId  — the order this tracker belongs to ('' if we don't know it)
  *   verified — true only if the order is (now) marked paid
+ *   state / status — what Safepay's reporter API said (for the admin "re-check" diagnosis)
  */
 export async function confirmTracker(redis, tracker) {
-  const out = { orderId: '', verified: false };
+  const out = { orderId: '', verified: false, tracker: String(tracker || ''), state: '', status: 0 };
   tracker = String(tracker || '');
   if (!redis || !SECRET || !TRACKER_RE.test(tracker)) return out;
   try {
@@ -53,14 +54,19 @@ export async function confirmTracker(redis, tracker) {
     out.orderId = o.id;
     if (o.paid) { out.verified = true; return out; }
     const t = await fetchTracker(tracker);
+    if (t) {
+      out.state = t.state; out.status = t.status;
+      o.safepayState = t.state || ('HTTP ' + t.status);
+      o.safepayCheckedAt = new Date().toISOString();
+    }
     if (t && t.ended) {
       o.paid = true;
       o.paidAt = new Date().toISOString();
       o.paymentRef = tracker.slice(0, 60);
       o.status = 'Processing';
-      await redis.set(ORDERS_KEY, list);
       out.verified = true;
     }
+    await redis.set(ORDERS_KEY, list);
   } catch (e) { /* caller redirects/acks anyway */ }
   return out;
 }

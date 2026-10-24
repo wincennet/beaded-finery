@@ -21,6 +21,7 @@
  */
 import { Redis } from '@upstash/redis';
 import { clientIp, rateLimited } from './_lib.js';
+import { confirmTracker } from './_safepay.js';
 
 const ORDERS_KEY = 'beadedfinery:orders';
 const ENV = (process.env.SAFEPAY_ENV || 'sandbox').toLowerCase() === 'production' ? 'production' : 'sandbox';
@@ -28,6 +29,8 @@ const SECRET = process.env.SAFEPAY_SECRET_KEY || '';
 const PUBLIC = process.env.SAFEPAY_PUBLIC_KEY || '';
 const INTENT = (process.env.SAFEPAY_INTENT || 'CYBERSOURCE').toUpperCase();
 const ENABLED = !!(SECRET && PUBLIC);
+const ADMIN_KEY = process.env.ADMIN_KEY || '';
+const isOwner = (req) => ADMIN_KEY && req.headers['x-admin-key'] === ADMIN_KEY;
 
 const API_BASE = ENV === 'production' ? 'https://api.getsafepay.com' : 'https://sandbox.api.getsafepay.com';
 const CHECKOUT_BASE = ENV === 'production' ? 'https://getsafepay.com/embedded/' : 'https://sandbox.api.getsafepay.com/embedded/';
@@ -72,9 +75,27 @@ async function safepayPost(path, body) {
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-admin-key');
   res.setHeader('Cache-Control', 'no-store');
   if (req.method === 'OPTIONS') return res.status(204).end();
+
+  // owner-only: GET /api/pay?recheck=<orderId> — ask Safepay what really happened to this order's
+  // payment and (if it succeeded) mark it paid. Used by the admin "Re-check payment" button.
+  const recheck = req.method === 'GET' && (req.query && req.query.recheck);
+  if (recheck) {
+    if (!isOwner(req)) return res.status(401).json({ error: 'Unauthorized' });
+    if (!ENABLED || !redis) return res.status(503).json({ error: 'Card payments are not configured' });
+    try {
+      const list = (await redis.get(ORDERS_KEY)) || [];
+      const order = Array.isArray(list) ? list.find((o) => o.id === String(recheck)) : null;
+      if (!order) return res.status(404).json({ error: 'Order not found' });
+      if (!order.safepayTracker) return res.status(200).json({ id: order.id, paid: !!order.paid, tracker: '', note: 'No Safepay session was ever opened for this order' });
+      const r = await confirmTracker(redis, order.safepayTracker);
+      return res.status(200).json({ id: order.id, paid: r.verified, tracker: r.tracker, state: r.state, httpStatus: r.status });
+    } catch (e) {
+      return res.status(500).json({ error: String(e && e.message ? e.message : e) });
+    }
+  }
 
   if (req.method === 'GET') {
     return res.status(200).json({ enabled: ENABLED, env: ENV });
