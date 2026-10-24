@@ -28,7 +28,9 @@ async function fetchTracker(tracker) {
     });
     if (!r.ok) return { ended: false, state: '', status: r.status };
     const j = await r.json().catch(() => ({}));
-    const state = (j && j.data && j.data.tracker && j.data.tracker.state) || '';
+    // documented shape is data.state (fetch-tracker page); older examples nest it under data.tracker
+    const d = (j && j.data) || {};
+    const state = d.state || (d.tracker && d.tracker.state) || '';
     return { ended: state === 'TRACKER_ENDED', state, status: r.status };
   } catch (e) {
     return null;
