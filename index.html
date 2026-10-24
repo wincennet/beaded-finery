@@ -2065,17 +2065,15 @@ const IG_POSTS = [
 const stars = (n) => '★★★★★'.slice(0, Math.max(1, Math.min(5, n || 5))) + '☆☆☆☆☆'.slice(0, 5 - Math.max(1, Math.min(5, n || 5)));
 
 function Testimonials() {
-  const seed = [
-    { name: 'Areej',  rating: 5, message: 'Absolutely loved my order! The quality is amazing and even more beautiful in person.' },
-    { name: 'Hira',   rating: 5, message: 'Such unique and pretty pieces. I got so many compliments wearing them.' },
-    { name: 'Saira',  rating: 5, message: 'Fast delivery and great customer service. Highly recommended.' },
-  ];
-  const reviews = (S.reviews && S.reviews.length ? S.reviews : seed).slice(0, 6);
+  // only real, owner-approved customer reviews are ever shown
+  const reviews = (S.reviews || []).slice(0, 6);
   return `
   <section id="feedback" class="py-16 sm:py-24" style="background:var(--card)">
     <div class="max-w-6xl mx-auto px-4 sm:px-6">
-      ${sectionHead('What Our Customers Say', 'Real words from the Beaded Finery family.')}
-      <div class="grid md:grid-cols-3 gap-4 sm:gap-6 scene">
+      ${reviews.length
+        ? sectionHead('What Our Customers Say', 'Real words from the Beaded Finery family.')
+        : sectionHead('Share Your Experience', "Bought from Beaded Finery? We'd love to hear how it went.")}
+      ${reviews.length ? `<div class="grid md:grid-cols-3 gap-4 sm:gap-6 scene">
         ${reviews.map((r,i) => `
           <figure class="reveal tilt rounded-2xl p-6 flex flex-col gap-4 depth-1 hover:depth-2 scene" style="background:#fff;animation-delay:${i*80}ms">
             <span class="font-display text-4xl leading-none" style="color:var(--sand)">&ldquo;</span>
@@ -2085,7 +2083,7 @@ function Testimonials() {
               <span class="ml-auto tracking-tight" style="color:var(--ok)">${stars(r.rating)}</span>
             </figcaption>
           </figure>`).join('')}
-      </div>
+      </div>` : ''}
 
       ${FeedbackForm()}
     </div>
