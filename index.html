@@ -62,7 +62,7 @@
     "https://www.tiktok.com/@beadedfinery",
     "https://www.youtube.com/@beadedfinery"
   ],
-  "paymentAccepted": ["Easypaisa", "JazzCash", "Bank Transfer"],
+  "paymentAccepted": ["Cash on Delivery", "Easypaisa", "JazzCash", "Bank Transfer"],
   "makesOffer": {
     "@type": "OfferCatalog",
     "name": "Handmade Jewelry",
@@ -868,7 +868,8 @@ async function placeOrder(btn) {
   S.checkoutStep = 3;
   save(); render();
   btn.classList.remove('loading');
-  toast(order.synced ? 'Order placed — send your payment proof' : 'Order saved — send your payment proof', 'ok');
+  const isCod = order.method === COD_METHOD;
+  toast(isCod ? 'Order placed — we will WhatsApp you to confirm' : (order.synced ? 'Order placed — send your payment proof' : 'Order saved — send your payment proof'), 'ok');
 }
 
 /* Pull server-side orders into the admin panel (owner only) */
@@ -1497,6 +1498,7 @@ const YT_URL = 'https://www.youtube.com/@beadedfinery';
 const EP_JC_NUMBER = '0334 4035732';
 const BANK = { name: 'Meezan Bank', title: 'MANAHAL AHMED', acc: '00300116083220', iban: 'PK21MEZN0000300116083220' };
 const CARD_METHOD = 'Credit / Debit Card';
+const COD_METHOD = 'Cash on Delivery';
 
 /* ==================================================================== */
 /*  RENDER                                                               */
@@ -2160,7 +2162,7 @@ function Footer() {
         <ul class="space-y-2 text-sm text-white/85">
           <li>Pakistan: ${price(S.ship.pk.rate)} — free over ${price(S.ship.pk.freeOver)}</li>
           <li>International: from ${price(S.ship.intl.default)}, by country</li>
-          <li>Payment: Easypaisa, JazzCash &amp; Meezan Bank transfer</li>
+          <li>Payment: Cash on delivery (Pakistan), Easypaisa, JazzCash &amp; Meezan Bank transfer</li>
           <li>Full advance payment confirms order</li>
         </ul>
         <form onsubmit="event.preventDefault();this.reset();toast('Subscribed — welcome!','ok')" class="mt-5 flex gap-2">
@@ -2520,6 +2522,7 @@ function CheckoutStep2() {
   const cardOn = S.cardPay && S.cardPay.enabled;
   const methods = [
     ...(cardOn ? [[CARD_METHOD, 'Visa, Mastercard & more — secure page by Safepay', '']] : []),
+    ...(shipCountry() === 'PK' ? [[COD_METHOD, 'Pay in cash when your order arrives (Pakistan only)', '']] : []),
     ['Easypaisa', 'Manahal Ahmed', EP_JC_NUMBER],
     ['JazzCash', 'Manahal Ahmed', EP_JC_NUMBER],
     ['Bank Transfer', `${BANK.name} — ${BANK.title}`, ''],
@@ -2562,6 +2565,11 @@ function CheckoutStep2() {
         </button>`).join('')}
     </div>
     ${S.paymentMethod === 'Bank Transfer' ? bankDetailsCard() : ''}
+    ${S.paymentMethod === COD_METHOD ? `
+    <div class="rounded-xl p-4 mt-3 text-sm flex gap-3" style="background:var(--card);color:var(--ink)">
+      <span class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-white" style="background:var(--ok)">${I.truck || '🚚'}</span>
+      <p>Pay <strong style="color:var(--brand)">${price(total)}</strong> in cash to the courier when your order arrives. We'll message you on WhatsApp to confirm your order and address before it's dispatched, so please keep your phone nearby.</p>
+    </div>` : ''}
     ${S.paymentMethod === CARD_METHOD ? `
     <div class="rounded-xl p-4 mt-3 text-sm flex gap-3" style="background:var(--card);color:var(--ink)">
       <span class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-white" style="background:var(--ok)">${I.lock || '🔒'}</span>
@@ -2583,7 +2591,7 @@ function CheckoutStep3() {
     <div class="mx-auto h-16 w-16 rounded-full flex items-center justify-center text-white p-4 pop-check" style="background:var(--ok)">${I.check}</div>
     <h3 class="font-display text-2xl font-bold mt-5" style="color:var(--brand)">${paid ? 'Payment received' : 'Order received'}${o ? ` — ${o.id}` : ''}</h3>
     <p class="mt-2 text-sm max-w-md mx-auto" style="color:var(--ink)">
-      ${paid ? "Your order is confirmed and we'll get to work on it. A confirmation is on its way to your email." : 'One last step to confirm your order.'}
+      ${paid ? "Your order is confirmed and we'll get to work on it. A confirmation is on its way to your email." : (o && o.method === COD_METHOD) ? "We'll message you on WhatsApp shortly to confirm your order and delivery address. You pay in cash when it arrives." : 'One last step to confirm your order.'}
     </p>
 
     ${paid ? `
@@ -2594,6 +2602,17 @@ function CheckoutStep3() {
         ${o.paymentRef ? `<div class="flex justify-between"><span>Reference</span><strong class="break-all">${o.paymentRef}</strong></div>` : ''}
       </div>
       <p class="text-sm mt-3">Questions about your order? Message us on WhatsApp:</p>
+      <a href="${WA_URL}" target="_blank" rel="noopener noreferrer" class="mt-2 flex items-center justify-center gap-2 rounded-lg bg-white p-3 text-sm font-medium" style="border:1px solid var(--line);color:var(--brand)">${I.whatsapp} ${PHONE}</a>
+    </div>` : ''}
+
+    ${!paid && o && o.method === COD_METHOD ? `
+    <div class="mt-7 rounded-xl p-6 text-left" style="background:var(--card);color:var(--ink)">
+      <p class="font-semibold mb-2" style="color:var(--brand)">Cash on delivery</p>
+      <div class="text-sm space-y-1">
+        <div class="flex justify-between"><span>Keep ready</span><strong style="color:var(--brand)">${money(o.total)}</strong></div>
+        <div class="flex justify-between"><span>Payment</span><strong>Cash to the courier on arrival</strong></div>
+      </div>
+      <p class="text-sm mt-3">Please reply when we message you to confirm — your order is dispatched after that. Questions? Message us on WhatsApp:</p>
       <a href="${WA_URL}" target="_blank" rel="noopener noreferrer" class="mt-2 flex items-center justify-center gap-2 rounded-lg bg-white p-3 text-sm font-medium" style="border:1px solid var(--line);color:var(--brand)">${I.whatsapp} ${PHONE}</a>
     </div>` : ''}
 
@@ -2608,7 +2627,7 @@ function CheckoutStep3() {
       </div>
     </div>` : ''}
 
-    ${!paid ? `
+    ${!paid && !(o && o.method === COD_METHOD) ? `
     <div class="mt-7 rounded-xl p-6 text-left" style="background:var(--card);color:var(--ink)">
       <p class="font-semibold mb-2" style="color:var(--brand)">Send your payment proof</p>
       <p class="text-sm">Please send a screenshot of your payment (with your name & order ID) to:</p>
@@ -2941,6 +2960,7 @@ function AdminOrders() {
             <p class="text-xs mt-0.5" style="color:var(--ink)">${[o.address, o.city, o.postal, o.countryName || (o.country && countryName(o.country))].filter(Boolean).join(', ')}</p>
             <p class="text-xs mt-0.5" style="color:var(--sand)">${o.email || ''} · Payment: ${o.method || '—'}</p>
             ${o.paid ? `<p class="text-[11px] mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold text-white" style="background:var(--ok)">✓ Paid by card${o.paymentRef ? ` · ${o.paymentRef}` : ''}</p>` : ''}
+            ${o.method === COD_METHOD ? `<p class="text-[11px] mt-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-semibold" style="background:var(--card);color:var(--brand)">💵 Cash on delivery — collect ${money(o.total || 0)}</p>` : ''}
             ${!o.paid && o.method === CARD_METHOD ? `<p class="text-[11px] mt-1" style="color:var(--sand)">${o.safepayTracker ? `Card payment not confirmed yet${o.safepayState ? ` · Safepay: ${o.safepayState}` : ''}` : 'Customer did not reach the card page'}</p>${o.safepayTracker ? `<button type="button" onclick="recheckPayment('${o.id}',this)" class="btn btn-ghost px-3 py-1.5 text-[11px] mt-1"><span class="btn-label">↻ Re-check payment with Safepay</span></button>` : ''}` : ''}
             ${o.notes ? `<p class="text-xs mt-1 italic" style="color:var(--ink)">Note: ${o.notes}</p>` : ''}
           </div>
