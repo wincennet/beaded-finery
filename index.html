@@ -2591,7 +2591,7 @@ function CheckoutStep3() {
     <div class="mx-auto h-16 w-16 rounded-full flex items-center justify-center text-white p-4 pop-check" style="background:var(--ok)">${I.check}</div>
     <h3 class="font-display text-2xl font-bold mt-5" style="color:var(--brand)">${paid ? 'Payment received' : 'Order received'}${o ? ` — ${o.id}` : ''}</h3>
     <p class="mt-2 text-sm max-w-md mx-auto" style="color:var(--ink)">
-      ${paid ? "Your order is confirmed and we'll get to work on it. A confirmation is on its way to your email." : (o && o.method === COD_METHOD) ? "We'll message you on WhatsApp shortly to confirm your order and delivery address. You pay in cash when it arrives." : 'One last step to confirm your order.'}
+      ${paid ? "Your order is confirmed and we'll get to work on it. Keep your order number handy if you contact us." : (o && o.method === COD_METHOD) ? "We'll message you on WhatsApp shortly to confirm your order and delivery address. You pay in cash when it arrives." : 'One last step to confirm your order.'}
     </p>
 
     ${paid ? `
@@ -3282,7 +3282,7 @@ try {
   }
   S.cart = [];
   S.checkoutStep = 3;
-  if (checkId) setTimeout(() => toast("We're confirming your payment — you'll get an email shortly", 'ok'), 300);
+  if (checkId) setTimeout(() => toast("We're confirming your payment — your order will update shortly", 'ok'), 300);
 })();
 
 // deter casual image saving; close the product preview on Escape
