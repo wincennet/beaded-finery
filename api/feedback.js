@@ -11,8 +11,8 @@
  */
 import { Redis } from '@upstash/redis';
 import { clientIp, rateLimited, ownerAuth, denyOwner, cors } from './_lib.js';
+import { listFeedback, getFeedback, saveFeedback, removeFeedback, countFeedback, nextFeedbackNumber } from './_feedback.js';
 
-const KEY = 'beadedfinery:feedback';
 const MAX = 500;
 
 let redis = null;
@@ -48,9 +48,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    const list = (await redis.get(KEY)) || [];
-
     if (req.method === 'GET') {
+      const list = await listFeedback(redis);
       if (wantsPublic) {
         return res.status(200).json(list.filter((f) => f.approved).map(publicView).slice(0, 60));
       }
@@ -67,36 +66,34 @@ export default async function handler(req, res) {
       const rating = Math.max(1, Math.min(5, Math.round(Number(b.rating) || 5)));
       if (!name || message.length < 3) return res.status(400).json({ error: 'Name and message required' });
       const item = {
-        id: 'FB-' + Date.now().toString(36),
+        id: '',
         name, message, rating,
         approved: false,
         date: new Date().toISOString().slice(0, 10),
         createdAt: new Date().toISOString(),
       };
-      // keep the list bounded without ever losing approved reviews: trim the oldest UNapproved first
-      let next = [item, ...list];
-      while (next.length > MAX) {
-        const idx = [...next].reverse().findIndex((f) => !f.approved);
-        if (idx === -1) break;
-        next.splice(next.length - 1 - idx, 1);
+      // keep the store bounded without ever losing approved reviews: trim the oldest UNapproved first
+      if ((await countFeedback(redis)) >= MAX) {
+        const oldestPending = [...(await listFeedback(redis))].reverse().find((f) => !f.approved);
+        if (oldestPending) await removeFeedback(redis, oldestPending.id);
       }
-      await redis.set(KEY, next);
+      // atomic id + a write that touches only THIS review: simultaneous posts can't overwrite each other
+      item.id = 'FB-' + (await nextFeedbackNumber(redis));
+      await saveFeedback(redis, item);
       return res.status(200).json({ ok: true, id: item.id });
     }
 
     if (req.method === 'PATCH') {
       const { id, approved } = readBody(req);
-      const f = list.find((x) => x.id === id);
-      if (f) f.approved = !!approved;
-      await redis.set(KEY, list);
+      const f = await getFeedback(redis, String(id || ''));
+      if (f) { f.approved = !!approved; await saveFeedback(redis, f); }
       return res.status(200).json({ ok: true, updated: !!f });
     }
 
     if (req.method === 'DELETE') {
       const { id } = readBody(req);
-      const next = list.filter((x) => x.id !== id);
-      await redis.set(KEY, next);
-      return res.status(200).json({ ok: true, removed: list.length - next.length });
+      const removed = await removeFeedback(redis, String(id || ''));
+      return res.status(200).json({ ok: true, removed });
     }
 
     return res.status(405).json({ error: 'Method not allowed' });
