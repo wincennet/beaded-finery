@@ -10,7 +10,8 @@
  * The tracker -> order mapping is the one api/pay.js stored when it created the session,
  * so a paid tracker can't be pointed at a different order.
  */
-const ORDERS_KEY = 'beadedfinery:orders';
+import { findOrderByTracker, getOrder, saveOrder } from './_orders.js';
+
 const ENV = (process.env.SAFEPAY_ENV || 'sandbox').toLowerCase() === 'production' ? 'production' : 'sandbox';
 const SECRET = process.env.SAFEPAY_SECRET_KEY || '';
 const API_BASE = ENV === 'production' ? 'https://api.getsafepay.com' : 'https://sandbox.api.getsafepay.com';
@@ -50,12 +51,13 @@ export async function confirmTracker(redis, tracker) {
   tracker = String(tracker || '');
   if (!redis || !SECRET || !TRACKER_RE.test(tracker)) return out;
   try {
-    const list = (await redis.get(ORDERS_KEY)) || [];
-    const o = Array.isArray(list) ? list.find((x) => x.safepayTracker === tracker) : null;
-    if (!o) return out;
-    out.orderId = o.id;
-    if (o.paid || o.advancePaid) { out.verified = true; return out; }
+    const found = await findOrderByTracker(redis, tracker);
+    if (!found) return out;
+    out.orderId = found.id;
+    if (found.paid || found.advancePaid) { out.verified = true; return out; }
     const t = await fetchTracker(tracker);
+    // re-read right before writing: the owner may have changed this order while we waited on Safepay
+    const o = (await getOrder(redis, found.id)) || found;
     if (t) {
       out.state = t.state; out.status = t.status;
       o.safepayState = t.state || ('HTTP ' + t.status);
@@ -69,7 +71,7 @@ export async function confirmTracker(redis, tracker) {
       o.status = 'Processing';
       out.verified = true;
     }
-    await redis.set(ORDERS_KEY, list);
+    await saveOrder(redis, o);
   } catch (e) { /* caller redirects/acks anyway */ }
   return out;
 }

@@ -22,8 +22,8 @@
 import { Redis } from '@upstash/redis';
 import { clientIp, rateLimited, ownerAuth, denyOwner, cors, siteUrl } from './_lib.js';
 import { confirmTracker } from './_safepay.js';
+import { getOrder, saveOrder, indexTracker } from './_orders.js';
 
-const ORDERS_KEY = 'beadedfinery:orders';
 const ENV = (process.env.SAFEPAY_ENV || 'sandbox').toLowerCase() === 'production' ? 'production' : 'sandbox';
 const SECRET = process.env.SAFEPAY_SECRET_KEY || '';
 const PUBLIC = process.env.SAFEPAY_PUBLIC_KEY || '';
@@ -76,8 +76,7 @@ export default async function handler(req, res) {
     if (!auth.ok) return denyOwner(res, auth);
     if (!ENABLED || !redis) return res.status(503).json({ error: 'Card payments are not configured' });
     try {
-      const list = (await redis.get(ORDERS_KEY)) || [];
-      const order = Array.isArray(list) ? list.find((o) => o.id === String(recheck)) : null;
+      const order = await getOrder(redis, String(recheck));
       if (!order) return res.status(404).json({ error: 'Order not found' });
       if (!order.safepayTracker) return res.status(200).json({ id: order.id, paid: !!order.paid, tracker: '', note: 'No Safepay session was ever opened for this order' });
       const r = await confirmTracker(redis, order.safepayTracker);
@@ -106,8 +105,7 @@ export default async function handler(req, res) {
     if (!orderId) return res.status(400).json({ error: 'orderId required' });
 
     // Look up the order the shopper just created — never trust an amount from the client.
-    const list = (await redis.get(ORDERS_KEY)) || [];
-    const order = Array.isArray(list) ? list.find((o) => o.id === orderId) : null;
+    const order = await getOrder(redis, String(orderId));
     if (!order) return res.status(404).json({ error: 'Order not found' });
     if (order.paid || order.advancePaid) return res.status(409).json({ error: 'Order already paid' });
 
@@ -151,8 +149,11 @@ export default async function handler(req, res) {
     }
 
     // remember which tracker belongs to this order — the callback finds the order by it
-    order.safepayTracker = tracker;
-    await redis.set(ORDERS_KEY, list);
+    // (re-read first: the owner may have touched the order during the Safepay calls above)
+    const fresh = (await getOrder(redis, order.id)) || order;
+    fresh.safepayTracker = tracker;
+    await saveOrder(redis, fresh);
+    await indexTracker(redis, tracker, fresh.id);
 
     // 3. hosted-checkout URL. redirect_url deliberately has no query string of its own:
     // Safepay appends ?tracker=... to it on return.

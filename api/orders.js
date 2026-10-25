@@ -22,8 +22,8 @@
 import { Redis } from '@upstash/redis';
 import { clientIp, rateLimited, ownerAuth, denyOwner, cors } from './_lib.js';
 import { DEFAULTS, shippingFor } from './_ship.js';
+import { listOrders, getOrder, saveOrder, removeOrder, countOrders, nextOrderNumber } from './_orders.js';
 
-const KEY = 'beadedfinery:orders';
 const PRODUCTS_KEY = 'beadedfinery:products';
 const SETTINGS_KEY = 'beadedfinery:settings';
 const MAX = 800;
@@ -56,22 +56,12 @@ const fail = (res, msg, status = 400) => res.status(status).json({ error: msg })
 
 const parse = (v) => (typeof v === 'string' ? JSON.parse(v) : v);
 
-/** next order number: one above the highest existing BF-#### (never below 1043) */
-function nextOrderId(list) {
-  let max = 1042;
-  for (const o of list) {
-    const m = /^BF-(\d{1,9})$/.exec(String(o && o.id));
-    if (m) max = Math.max(max, Number(m[1]));
-  }
-  return 'BF-' + (max + 1);
-}
-
 /**
  * Validate + price an incoming order. Returns { error } or { order }.
  * Nothing in `raw` is trusted except what the customer genuinely chooses
  * (what they want, their contact details, how they'd like to pay).
  */
-async function buildOrder(raw, list) {
+async function buildOrder(raw) {
   const o = raw && typeof raw === 'object' ? raw : {};
 
   const name = txt(o.name, 120);
@@ -138,7 +128,6 @@ async function buildOrder(raw, list) {
 
   return {
     order: {
-      id: nextOrderId(list),
       name, phone, email, city, address, postal, notes,
       country, countryName,
       method,
@@ -174,8 +163,7 @@ export default async function handler(req, res) {
 
   try {
     if (req.method === 'GET') {
-      const list = (await redis.get(KEY)) || [];
-      return res.status(200).json(Array.isArray(list) ? list : []);
+      return res.status(200).json(await listOrders(redis));
     }
 
     if (req.method === 'POST') {
@@ -189,20 +177,19 @@ export default async function handler(req, res) {
       }
       let raw;
       try { raw = readBody(req); } catch (e) { return fail(res, 'Invalid order'); }
-      let list = (await redis.get(KEY)) || [];
-      if (!Array.isArray(list)) list = [];
-
-      const built = await buildOrder(raw, list);
+      const built = await buildOrder(raw);
       if (built.error) return fail(res, built.error, built.status || 400);
       const order = built.order;
 
-      // keep the list bounded without ever dropping live orders: only finished (Shipped) ones go
-      if (list.length >= MAX) {
-        const idx = [...list].reverse().findIndex((o) => o && o.status === 'Shipped');
-        if (idx === -1) return fail(res, 'We cannot take new orders right now — please message us on WhatsApp.', 503);
-        list.splice(list.length - 1 - idx, 1);
+      // keep the store bounded without ever dropping live orders: only finished (Shipped) ones go
+      if ((await countOrders(redis)) >= MAX) {
+        const oldestShipped = [...(await listOrders(redis))].reverse().find((o) => o && o.status === 'Shipped');
+        if (!oldestShipped) return fail(res, 'We cannot take new orders right now — please message us on WhatsApp.', 503);
+        await removeOrder(redis, oldestShipped.id);
       }
-      await redis.set(KEY, [order, ...list]);
+      // atomic order number + a write that touches only THIS order: simultaneous customers can't clash
+      order.id = 'BF-' + (await nextOrderNumber(redis));
+      await saveOrder(redis, order);
       return res.status(200).json({
         ok: true, id: order.id,
         subtotal: order.subtotal, shipping: order.shipping, total: order.total,
@@ -214,19 +201,15 @@ export default async function handler(req, res) {
       const { id, status } = readBody(req);
       const allowed = ['Pending Payment Verification', 'Processing', 'Shipped'];
       if (!allowed.includes(status)) return res.status(400).json({ error: 'Bad status' });
-      const list = (await redis.get(KEY)) || [];
-      const o = list.find((x) => x.id === id);
-      if (o) o.status = status;
-      await redis.set(KEY, list);
+      const o = await getOrder(redis, String(id || ''));
+      if (o) { o.status = status; await saveOrder(redis, o); }
       return res.status(200).json({ ok: true, updated: !!o });
     }
 
     if (req.method === 'DELETE') {
       const { id } = readBody(req);
-      const list = (await redis.get(KEY)) || [];
-      const next = list.filter((o) => o.id !== id);
-      await redis.set(KEY, next);
-      return res.status(200).json({ ok: true, removed: list.length - next.length });
+      const removed = await removeOrder(redis, String(id || ''));
+      return res.status(200).json({ ok: true, removed });
     }
 
     return res.status(405).json({ error: 'Method not allowed' });
