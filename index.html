@@ -84,33 +84,8 @@
      Vercel dashboard (Project -> Analytics -> Enable) for this to start recording. -->
 <script defer src="/_vercel/insights/script.js"></script>
 
-<script src="https://cdn.tailwindcss.com"></script>
-<script>
-  tailwind.config = {
-    theme: {
-      extend: {
-        colors: {
-          brand:   { DEFAULT: '#7A4667', hover: '#9B7A8E' },
-          sand:    '#B7A897',
-          canvas:  '#F7F4EE',
-          ink:     '#3A2A32',
-          line:    '#E2D8CC',
-          card:    '#EFE8E1',
-          ok:      '#A7A087',
-          err:     '#D7A9B2',
-        },
-        fontFamily: {
-          display: ['"Playfair Display"', 'Georgia', 'serif'],
-          body: ['"Poppins"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
-        },
-        transitionTimingFunction: {
-          silk: 'cubic-bezier(0.22, 1, 0.36, 1)',
-          spring: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
-        },
-      },
-    },
-  };
-</script>
+<!-- Tailwind is pre-built and self-hosted (see tailwind.config.cjs) — no third-party script runs on this site -->
+<link rel="stylesheet" href="/tailwind.css?v=1">
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;0,800;1,400;1,500;1,600&family=Poppins:wght@300;400;500;600&family=Sacramento&display=swap" rel="stylesheet" />
