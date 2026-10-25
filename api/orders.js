@@ -10,14 +10,26 @@
  * Vercel Environment Variable (Project → Settings → Environment Variables).
  * Without ADMIN_KEY set, the owner endpoints are locked (401) — fail closed.
  *
+ * SECURITY — a public order is treated as untrusted input:
+ *   • the server picks the order id (a customer can never overwrite or impersonate an order)
+ *   • every item is looked up in the real catalogue: price comes from the catalogue, never
+ *     from the browser; unknown / out-of-stock items are rejected
+ *   • shipping, total and the cash-on-delivery advance are re-computed here
+ *   • all text is stripped of control characters and angle brackets and length-limited
+ *
  * Storage: Upstash Redis. Vercel injects KV_REST_API_URL / KV_REST_API_TOKEN.
  */
 import { Redis } from '@upstash/redis';
-import { clientIp, rateLimited } from './_lib.js';
+import { clientIp, rateLimited, ownerAuth, denyOwner, cors } from './_lib.js';
+import { DEFAULTS, shippingFor } from './_ship.js';
 
 const KEY = 'beadedfinery:orders';
+const PRODUCTS_KEY = 'beadedfinery:products';
+const SETTINGS_KEY = 'beadedfinery:settings';
 const MAX = 800;
-const ADMIN_KEY = process.env.ADMIN_KEY || '';
+
+const METHODS = ['Credit / Debit Card', 'Cash on Delivery', 'Easypaisa', 'JazzCash', 'Bank Transfer'];
+const ADVANCE_METHODS = ['Credit / Debit Card', 'Easypaisa', 'JazzCash', 'Bank Transfer'];
 
 let redis = null;
 try {
@@ -33,66 +45,123 @@ const readBody = (req) => {
   return typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body;
 };
 
-const isOwner = (req) => {
-  if (!ADMIN_KEY) return false;
-  const k = req.headers['x-admin-key'] || req.headers['X-Admin-Key'];
-  return typeof k === 'string' && k === ADMIN_KEY;
-};
+/** plain single-line text: no control characters, no angle brackets, trimmed, length-limited */
+const txt = (v, n) => String(v == null ? '' : v)
+  .replace(/[\u0000-\u001f\u007f<>]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .slice(0, n);
 
-const sanitizeOrder = (raw) => {
+const fail = (res, msg, status = 400) => res.status(status).json({ error: msg });
+
+const parse = (v) => (typeof v === 'string' ? JSON.parse(v) : v);
+
+/** next order number: one above the highest existing BF-#### (never below 1043) */
+function nextOrderId(list) {
+  let max = 1042;
+  for (const o of list) {
+    const m = /^BF-(\d{1,9})$/.exec(String(o && o.id));
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return 'BF-' + (max + 1);
+}
+
+/**
+ * Validate + price an incoming order. Returns { error } or { order }.
+ * Nothing in `raw` is trusted except what the customer genuinely chooses
+ * (what they want, their contact details, how they'd like to pay).
+ */
+async function buildOrder(raw, list) {
   const o = raw && typeof raw === 'object' ? raw : {};
-  const items = Array.isArray(o.items)
-    ? o.items.slice(0, 50).map((i) => {
-        const it = {
-          name: String(i.name || '').slice(0, 120),
-          qty: Math.max(1, Math.min(99, Number(i.qty) || 1)),
-          price: Math.max(0, Number(i.price) || 0),
-        };
-        if (i.size) it.size = String(i.size).slice(0, 40);
-        if (i.color) it.color = String(i.color).slice(0, 40);
-        return it;
-      })
-    : [];
-  const total = Math.max(0, Number(o.total) || 0);
-  const method = String(o.method || '').slice(0, 40);
-  // Cash on delivery = 50% advance now, the rest in cash on delivery. The advance is ALWAYS
-  // worked out here from the total — never taken from the client — so it can't be tampered with.
+
+  const name = txt(o.name, 120);
+  const phone = txt(o.phone, 40);
+  const email = txt(o.email, 120);
+  const address = txt(o.address, 400);
+  const city = txt(o.city, 80);
+  const postal = txt(o.postal, 20);
+  const notes = txt(o.notes, 500);
+  const country = /^[A-Za-z]{2}$/.test(String(o.country || '')) ? String(o.country).toUpperCase() : 'PK';
+  const countryName = txt(o.countryName, 60);
+
+  if (name.length < 2) return { error: 'Please enter your name.' };
+  if (!/^[0-9+()\-\s]{7,40}$/.test(phone) || phone.replace(/\D/g, '').length < 7) return { error: 'Please enter a valid phone number.' };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: 'Please enter a valid email address.' };
+  if (address.length < 3 || city.length < 2) return { error: 'Please enter your delivery address and city.' };
+
+  const method = METHODS.includes(o.method) ? o.method : '';
+  if (!method) return { error: 'Please choose a payment method.' };
+  if (method === 'Cash on Delivery' && country !== 'PK') return { error: 'Cash on delivery is only available in Pakistan.' };
+
+  // --- items: price/stock/options come from the real catalogue ---
+  const hash = (await redis.hgetall(PRODUCTS_KEY)) || {};
+  const products = Object.values(hash).map(parse).filter(Boolean);
+  if (!products.length) return { error: 'The shop is being updated — please try again shortly.', status: 503 };
+  const byId = new Map(products.map((p) => [String(p.id), p]));
+  const byName = new Map(products.map((p) => [String(p.name || '').trim().toLowerCase(), p]));
+
+  const rawItems = Array.isArray(o.items) ? o.items.slice(0, 50) : [];
+  if (!rawItems.length) return { error: 'Your cart is empty.' };
+  const items = [];
+  for (const i of rawItems) {
+    const it = i && typeof i === 'object' ? i : {};
+    const p = (it.id && byId.get(String(it.id))) || byName.get(txt(it.name, 120).toLowerCase());
+    if (!p) return { error: 'An item in your cart is no longer available. Please refresh the page and try again.' };
+    if (p.stock === false) return { error: `Sorry, "${txt(p.name, 60)}" is out of stock.` };
+    const qty = Math.max(1, Math.min(20, Math.floor(Number(it.qty)) || 1));
+    const line = { id: String(p.id), name: txt(p.name, 120), qty, price: Math.max(0, Math.round(Number(p.price) || 0)) };
+    const size = txt(it.size, 40);
+    const color = txt(it.color, 40);
+    if (Array.isArray(p.sizes) && p.sizes.length) {
+      if (!p.sizes.includes(size)) return { error: `Please choose a size for "${line.name}".` };
+      line.size = size;
+    }
+    if (Array.isArray(p.colors) && p.colors.length) {
+      if (!p.colors.includes(color)) return { error: `Please choose a colour for "${line.name}".` };
+      line.color = color;
+    }
+    items.push(line);
+  }
+  const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
+
+  // --- shipping from the owner's current shipping rules ---
+  const saved = await redis.get(SETTINGS_KEY);
+  const settings = saved && typeof saved === 'object' && saved.pk && saved.intl ? saved : DEFAULTS;
+  const shipping = shippingFor(settings, country, subtotal);
+  if (shipping == null) return { error: `Sorry, we don't deliver to ${countryName || country} yet.` };
+  const total = subtotal + shipping;
+
+  // --- cash on delivery: 50% advance now, rest on delivery (always worked out here) ---
   const isCod = method === 'Cash on Delivery';
   const advance = isCod ? Math.ceil(total / 2) : 0;
-  const ADVANCE_METHODS = ['Credit / Debit Card', 'Easypaisa', 'JazzCash', 'Bank Transfer'];
   const advanceMethod = ADVANCE_METHODS.includes(o.advanceMethod) ? o.advanceMethod : 'Bank Transfer';
+
   return {
-    id: String(o.id || 'BF-' + Date.now().toString().slice(-7)).slice(0, 24),
-    name: String(o.name || '').slice(0, 120),
-    phone: String(o.phone || '').slice(0, 40),
-    email: String(o.email || '').slice(0, 120),
-    city: String(o.city || '').slice(0, 80),
-    address: String(o.address || '').slice(0, 400),
-    postal: String(o.postal || '').slice(0, 20),
-    notes: String(o.notes || '').slice(0, 500),
-    method,
-    items,
-    subtotal: Math.max(0, Number(o.subtotal) || 0),
-    shipping: Math.max(0, Number(o.shipping) || 0),
-    total,
-    ...(isCod ? { advance, balance: total - advance, advanceMethod } : {}),
-    status: 'Pending Payment Verification',
-    date: new Date().toISOString().slice(0, 10),
-    createdAt: new Date().toISOString(),
+    order: {
+      id: nextOrderId(list),
+      name, phone, email, city, address, postal, notes,
+      country, countryName,
+      method,
+      items,
+      subtotal, shipping, total,
+      ...(isCod ? { advance, balance: total - advance, advanceMethod } : {}),
+      status: 'Pending Payment Verification',
+      date: new Date().toISOString().slice(0, 10),
+      createdAt: new Date().toISOString(),
+    },
   };
-};
+}
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-admin-key');
+  cors(req, res, 'GET, POST, PATCH, DELETE, OPTIONS');
   res.setHeader('Cache-Control', 'no-store');
 
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   // Owner-only methods require the admin key.
-  if (['GET', 'PATCH', 'DELETE'].includes(req.method) && !isOwner(req)) {
-    return res.status(401).json({ error: 'Unauthorized' });
+  if (['GET', 'PATCH', 'DELETE'].includes(req.method)) {
+    const auth = await ownerAuth(req, redis);
+    if (!auth.ok) return denyOwner(res, auth);
   }
 
   if (!redis) {
@@ -110,19 +179,35 @@ export default async function handler(req, res) {
     }
 
     if (req.method === 'POST') {
-      // generous cap — a real shopper never places 20 orders in 10 minutes; a bot might
-      if (await rateLimited(redis, `beadedfinery:rl:orders:${clientIp(req)}`, 20, 600)) {
-        return res.status(429).json({ error: 'Too many orders from this connection — please wait a bit and try again.' });
+      // a real shopper places 1–2 orders; a bot places hundreds. Per-connection AND whole-shop caps
+      // so junk orders can never crowd real ones out.
+      if (await rateLimited(redis, `beadedfinery:rl:orders:${clientIp(req)}`, 10, 3600)) {
+        return fail(res, 'Too many orders from this connection — please wait a while and try again.', 429);
       }
-      const raw = readBody(req);
-      if (!raw || !raw.name || !Array.isArray(raw.items) || raw.items.length === 0) {
-        return res.status(400).json({ error: 'Invalid order' });
+      if (await rateLimited(redis, 'beadedfinery:rl:orders:all', 80, 3600)) {
+        return fail(res, 'We are very busy right now — please try again in a few minutes.', 429);
       }
-      const order = sanitizeOrder(raw);
-      const list = (await redis.get(KEY)) || [];
-      const next = [order, ...list.filter((o) => o.id !== order.id)].slice(0, MAX);
-      await redis.set(KEY, next);
-      return res.status(200).json({ id: order.id, ok: true });
+      let raw;
+      try { raw = readBody(req); } catch (e) { return fail(res, 'Invalid order'); }
+      let list = (await redis.get(KEY)) || [];
+      if (!Array.isArray(list)) list = [];
+
+      const built = await buildOrder(raw, list);
+      if (built.error) return fail(res, built.error, built.status || 400);
+      const order = built.order;
+
+      // keep the list bounded without ever dropping live orders: only finished (Shipped) ones go
+      if (list.length >= MAX) {
+        const idx = [...list].reverse().findIndex((o) => o && o.status === 'Shipped');
+        if (idx === -1) return fail(res, 'We cannot take new orders right now — please message us on WhatsApp.', 503);
+        list.splice(list.length - 1 - idx, 1);
+      }
+      await redis.set(KEY, [order, ...list]);
+      return res.status(200).json({
+        ok: true, id: order.id,
+        subtotal: order.subtotal, shipping: order.shipping, total: order.total,
+        ...(order.advance != null ? { advance: order.advance, balance: order.balance, advanceMethod: order.advanceMethod } : {}),
+      });
     }
 
     if (req.method === 'PATCH') {

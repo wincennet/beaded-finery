@@ -685,6 +685,21 @@ function goto(route) {
 }
 function setCategory(c) { S.activeCategory = c; S.route = 'shop'; window.scrollTo({top: 320, behavior:'smooth'}); save(); render(); }
 /* ---- owner auth ---- */
+/* ---- SECURITY: anything a customer typed (order details, reviews) is untrusted text.
+   It must pass through esc()/escObj() before it goes into innerHTML, otherwise someone could
+   plant a script in an order or review that runs in the owner's admin panel. ---- */
+const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+/* ids sit inside onclick="…('id')" attributes, so they may only be plain characters */
+const safeId = (v) => String(v == null ? '' : v).replace(/[^A-Za-z0-9_-]/g, '');
+/* deep copy with every string HTML-escaped (and every "id" reduced to safe characters) */
+function escObj(v, key) {
+  if (typeof v === 'string') return key === 'id' ? safeId(v) : esc(v);
+  if (Array.isArray(v)) return v.map(x => escObj(x));
+  if (v && typeof v === 'object') { const o = {}; for (const k of Object.keys(v)) o[k] = escObj(v[k], k); return o; }
+  return v;
+}
+const IS_DEV_HOST = location.protocol === 'file:' || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+
 function adminKey() { try { return sessionStorage.getItem('bf_adminKey') || ''; } catch (e) { return ''; } }
 function setAdminKey(k) { try { k ? sessionStorage.setItem('bf_adminKey', k) : sessionStorage.removeItem('bf_adminKey'); } catch (e) {} }
 function adminHeaders(json) {
@@ -720,9 +735,10 @@ async function submitLogin(ev) {
   const pw = (input?.value || '').trim();
   if (!pw) { S.loginError = 'Enter your password'; render(); return; }
   btn.classList.add('loading');
-  const ok = await fetch('/api/orders', { headers: { 'x-admin-key': pw } }).then(r => r.ok).catch(() => false);
+  const resp = await fetch('/api/orders', { headers: { 'x-admin-key': pw } }).catch(() => null);
+  const ok = !!(resp && resp.ok);
   btn.classList.remove('loading');
-  if (!ok) { setAdminKey(''); S.loginError = 'Incorrect password'; render(); requestAnimationFrame(() => document.getElementById('login-pw')?.focus()); return; }
+  if (!ok) { setAdminKey(''); S.loginError = (resp && resp.status === 429) ? 'Too many wrong attempts — please wait 15 minutes' : 'Incorrect password'; render(); requestAnimationFrame(() => document.getElementById('login-pw')?.focus()); return; }
   setAdminKey(pw);
   openAdminPanel();
 }
@@ -815,7 +831,7 @@ async function placeOrder(btn) {
   if (shipBlocked(cc)) { toast(`We don't deliver to ${countryName(cc)} yet`, 'err'); return; }
   btn.classList.add('loading');
   const items = cartDetailed().map(c => {
-    const it = { name: c.p.name, qty: c.qty, price: c.p.price };
+    const it = { id: c.p.id, name: c.p.name, qty: c.qty, price: c.p.price };
     if (c.size) it.size = c.size;
     if (c.color) it.color = c.color;
     return it;
@@ -840,12 +856,35 @@ async function placeOrder(btn) {
   }
   // Persist to the server so the owner sees it in the admin panel from any device.
   // Falls back to local-only if the API is not available (e.g. opened as a plain file).
+  // The server decides the order number, the prices and the shipping — we adopt its answer.
+  // (Only on a local/dev copy do we fall back to a browser-only order.)
   try {
     const res = await fetch('/api/orders', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(order),
     });
-    if (res.ok) { const saved = await res.json(); if (saved && saved.id) order.id = saved.id; order.synced = true; }
-  } catch (e) { /* offline / static hosting — keep local copy */ }
+    if (res.ok) {
+      const saved = await res.json();
+      if (saved && saved.id) {
+        order.id = saved.id; order.synced = true;
+        if (saved.total != null) {
+          order.subtotal = saved.subtotal; order.shipping = saved.shipping; order.total = saved.total;
+          order.displayTotal = price(saved.total);
+        }
+        if (saved.advance != null) { order.advance = saved.advance; order.balance = saved.balance; order.advanceMethod = saved.advanceMethod; }
+      }
+    } else if (!IS_DEV_HOST) {
+      const j = await res.json().catch(() => ({}));
+      toast(j.error || 'Could not place your order — please try again', 'err');
+      btn.classList.remove('loading');
+      return;
+    }
+  } catch (e) {
+    if (!IS_DEV_HOST) {
+      toast('Could not place your order — please check your connection and try again', 'err');
+      btn.classList.remove('loading');
+      return;
+    }
+  }
 
   S.orders.unshift(order);
   S.lastOrder = order;
@@ -1234,8 +1273,8 @@ function DemoCleanupModal() {
             <label class="flex items-start gap-2.5 rounded-lg p-2 cursor-pointer" style="background:var(--card)">
               <input type="checkbox" ${pick.has(x.key) ? 'checked' : ''} onchange="toggleDemoPick('${x.key}')" class="mt-0.5 h-4 w-4 accent-[var(--brand)] shrink-0">
               <span class="min-w-0">
-                <span class="block text-sm font-medium truncate" style="color:var(--ink)">${x.label}</span>
-                <span class="block text-xs truncate" style="color:var(--sand)">${x.sub}</span>
+                <span class="block text-sm font-medium truncate" style="color:var(--ink)">${esc(x.label)}</span>
+                <span class="block text-xs truncate" style="color:var(--sand)">${esc(x.sub)}</span>
               </span>
             </label>`).join('')}
         </div>
@@ -2099,7 +2138,7 @@ function Testimonials() {
         ? sectionHead('What Our Customers Say', 'Real words from the Beaded Finery family.')
         : sectionHead('Share Your Experience', "Bought from Beaded Finery? We'd love to hear how it went.")}
       ${reviews.length ? `<div class="grid md:grid-cols-3 gap-4 sm:gap-6 scene">
-        ${reviews.map((r,i) => `
+        ${reviews.map((raw,i) => { const r = escObj(raw); return `
           <figure class="reveal tilt rounded-2xl p-6 flex flex-col gap-4 depth-1 hover:depth-2 scene" style="background:#fff;animation-delay:${i*80}ms">
             <span class="font-display text-4xl leading-none" style="color:var(--sand)">&ldquo;</span>
             <blockquote class="text-sm leading-relaxed flex-1" style="color:var(--ink)">${r.message}</blockquote>
@@ -2107,7 +2146,7 @@ function Testimonials() {
               <span class="inline-flex h-7 w-7 items-center justify-center rounded-full text-white" style="background:var(--sand)">${(r.name||'?')[0].toUpperCase()}</span>${r.name}
               <span class="ml-auto tracking-tight" style="color:var(--ok)">${stars(r.rating)}</span>
             </figcaption>
-          </figure>`).join('')}
+          </figure>`; }).join('')}
       </div>` : ''}
 
       ${FeedbackForm()}
@@ -2131,7 +2170,7 @@ function FeedbackForm() {
     <div class="space-y-4">
       <label class="block">
         <span class="text-xs font-medium mb-1.5 block" style="color:var(--ink)">Your name *</span>
-        <input value="${f.name || ''}" class="field" placeholder="e.g. Ayesha" oninput="bindFeedback('name',this.value)">
+        <input value="${esc(f.name)}" class="field" placeholder="e.g. Ayesha" oninput="bindFeedback('name',this.value)">
       </label>
       <div>
         <span class="text-xs font-medium mb-1.5 block" style="color:var(--ink)">Rating</span>
@@ -2506,7 +2545,7 @@ function CheckoutStep1() {
       <span class="text-xs font-medium mb-1.5 block" style="color:var(--ink)">${label}${opts.req ? ' *' : ''}</span>
       ${opts.area
         ? `<textarea ${attrs} rows="3" class="field" style="${badStyle}" placeholder="${opts.ph||''}">${s[k]||''}</textarea>`
-        : `<input ${attrs} value="${s[k]||''}" type="${opts.type||'text'}" class="field" style="${badStyle}" placeholder="${opts.ph||''}">`}
+        : `<input ${attrs} value="${esc(s[k])}" type="${opts.type||'text'}" class="field" style="${badStyle}" placeholder="${opts.ph||''}">`}
       <p id="err-${k}" class="text-xs mt-1" style="color:var(--err)" ${bad ? '' : 'hidden'}>${bad ? errs[k] : ''}</p>
     </label>`;
   };
@@ -2854,7 +2893,7 @@ function SearchPanel() {
       <div class="max-w-3xl mx-auto p-5">
         <div class="flex items-center gap-3">
           <span style="color:var(--sand)">${I.search}</span>
-          <input id="search-input" value="${S.searchQuery}" oninput="setSearch(this.value)" onkeydown="if(event.key==='Escape')openSearch(false)" placeholder="Search jewelry…" class="flex-1 bg-transparent outline-none text-lg" style="color:var(--ink)">
+          <input id="search-input" value="${esc(S.searchQuery)}" oninput="setSearch(this.value)" onkeydown="if(event.key==='Escape')openSearch(false)" placeholder="Search jewelry…" class="flex-1 bg-transparent outline-none text-lg" style="color:var(--ink)">
           <button onclick="openSearch(false)" class="p-2 rounded-full hover:bg-white/60" style="color:var(--ink)">${I.x}</button>
         </div>
         <div class="mt-2 flex flex-wrap gap-2">
@@ -2944,7 +2983,7 @@ function AdminProducts() {
           <input type="hidden" name="id" value="${editing?.id || ''}">
           <input type="hidden" name="img" id="prod-img" value="${curImg}">
           <label class="block"><span class="text-xs font-medium mb-1 block" style="color:var(--ink)">Product name *</span>
-            <input name="name" required class="field" value="${editing?.name || ''}" placeholder="e.g. Noor Beaded Bracelet"></label>
+            <input name="name" required class="field" value="${esc(editing?.name)}" placeholder="e.g. Noor Beaded Bracelet"></label>
           <label class="block"><span class="text-xs font-medium mb-1 block" style="color:var(--ink)">Category</span>
             <select name="category" class="field">
               ${CATEGORIES.map(c => `<option ${editing?.category === c ? 'selected' : ''}>${c}</option>`).join('')}
@@ -3025,7 +3064,7 @@ function AdminOrders() {
     </div>`;
   return `
   <div class="space-y-4">
-    ${S.orders.map(o => `
+    ${S.orders.map(raw => { const o = escObj(raw); return `
       <div class="reveal rounded-2xl p-5 depth-1" style="background:#fff;border:1px solid var(--line)">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="min-w-0">
@@ -3061,11 +3100,11 @@ function AdminOrders() {
             <button onclick="setOrderStatus('${o.id}','${st}')" class="text-[11px] font-semibold rounded-full px-3 py-1.5 transition-all duration-300 ${
               o.status === st ? 'text-white depth-1 scale-105' : ''
             }" style="${o.status === st ? `background:${badge(st)}` : 'background:var(--canvas);color:var(--ink);border:1px solid var(--line)'}">${st}</button>`).join('')}
-          ${waCustomerLink(o) ? `<a href="${waCustomerLink(o)}" target="_blank" rel="noopener noreferrer" title="Opens WhatsApp with a ready-written message" class="ml-auto inline-flex items-center gap-1.5 text-[11px] font-medium rounded-full px-3 py-1.5" style="background:var(--ok);color:#fff">${I.whatsapp}<span>Message customer</span></a>` : ''}
-          <button onclick="cycleOrderStatus('${o.id}')" class="${waCustomerLink(o) ? '' : 'ml-auto '}text-[11px] font-medium rounded-full px-3 py-1.5" style="background:var(--brand);color:#fff">Advance →</button>
+          ${waCustomerLink(raw) ? `<a href="${waCustomerLink(raw)}" target="_blank" rel="noopener noreferrer" title="Opens WhatsApp with a ready-written message" class="ml-auto inline-flex items-center gap-1.5 text-[11px] font-medium rounded-full px-3 py-1.5" style="background:var(--ok);color:#fff">${I.whatsapp}<span>Message customer</span></a>` : ''}
+          <button onclick="cycleOrderStatus('${o.id}')" class="${waCustomerLink(raw) ? '' : 'ml-auto '}text-[11px] font-medium rounded-full px-3 py-1.5" style="background:var(--brand);color:#fff">Advance →</button>
           <button onclick="deleteOrder('${o.id}')" title="Delete order" class="p-1.5 rounded-lg hover:bg-black/5" style="color:var(--err)">${I.trash}</button>
         </div>
-      </div>`).join('')}
+      </div>`; }).join('')}
   </div>`;
 }
 
@@ -3080,7 +3119,7 @@ function AdminFeedback() {
   return `
   <p class="text-sm mb-4" style="color:var(--ink)">Toggle <strong>Show on site</strong> to publish a review in the “What Our Customers Say” section.</p>
   <div class="space-y-3">
-    ${list.map(r => `
+    ${list.map(raw => { const r = escObj(raw); return `
       <div class="rounded-2xl p-5 depth-1" style="background:#fff;border:1px solid var(--line)">
         <div class="flex items-start justify-between gap-3">
           <div>
@@ -3094,7 +3133,7 @@ function AdminFeedback() {
           <input type="checkbox" ${r.approved ? 'checked' : ''} onchange="approveReview('${r.id}', this.checked)" class="accent-[var(--ok)] h-4 w-4">
           Show on site
         </label>
-      </div>`).join('')}
+      </div>`; }).join('')}
   </div>`;
 }
 

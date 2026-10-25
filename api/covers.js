@@ -9,9 +9,9 @@
  * independent request (a single big settings blob would exceed Upstash's request-size limit).
  */
 import { Redis } from '@upstash/redis';
+import { ownerAuth, denyOwner, cors } from './_lib.js';
 
 const KEY = 'beadedfinery:covers';
-const ADMIN_KEY = process.env.ADMIN_KEY || '';
 const MAX_IMG = 250000;   // chars — the admin shrinks covers to ~70 KB before sending
 
 let redis = null;
@@ -25,17 +25,14 @@ const readBody = (req) => {
   if (!req.body) return {};
   return typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body;
 };
-const isOwner = (req) => ADMIN_KEY && req.headers['x-admin-key'] === ADMIN_KEY;
 const okImg = (v) => typeof v === 'string' && v.length < MAX_IMG && (/^data:image\/(jpeg|png|webp);base64,/.test(v) || /^https:\/\//.test(v));
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-admin-key');
+  cors(req, res, 'GET, PUT, OPTIONS');
   res.setHeader('Cache-Control', 'no-store');
   if (req.method === 'OPTIONS') return res.status(204).end();
 
-  if (req.method === 'PUT' && !isOwner(req)) return res.status(401).json({ error: 'Unauthorized' });
+  if (req.method === 'PUT') { const auth = await ownerAuth(req, redis); if (!auth.ok) return denyOwner(res, auth); }
   if (!redis) {
     if (req.method === 'GET') return res.status(200).json({});
     return res.status(200).json({ ok: true, persisted: false });

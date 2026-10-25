@@ -11,6 +11,7 @@
  */
 import { Redis } from '@upstash/redis';
 import { confirmTracker } from './_safepay.js';
+import { clientIp, rateLimited, siteUrl } from './_lib.js';
 
 let redis = null;
 try {
@@ -18,13 +19,6 @@ try {
   const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
   if (url && token) redis = new Redis({ url, token });
 } catch (e) { redis = null; }
-
-function siteUrl(req) {
-  if (process.env.SITE_URL) return process.env.SITE_URL.replace(/\/$/, '');
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
-  const proto = req.headers['x-forwarded-proto'] || 'https';
-  return `${proto}://${host}`;
-}
 
 function collectParams(req) {
   const out = { ...(req.query || {}) };
@@ -40,6 +34,14 @@ export default async function handler(req, res) {
   const base = siteUrl(req);
   const p = collectParams(req);
   const tracker = String(p.tracker || p.beacon || '').slice(0, 120);
+
+  // each valid-looking callback can trigger a call to Safepay — cap how fast one visitor can do that
+  if (await rateLimited(redis, `beadedfinery:rl:paycb:${clientIp(req)}`, 60, 600)) {
+    res.statusCode = 302;
+    res.setHeader('Location', `${base}/?paycheck=`);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.end();
+  }
 
   const { orderId, verified } = await confirmTracker(redis, tracker);
 

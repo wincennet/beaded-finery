@@ -11,10 +11,10 @@
  * client-side before sending) or as plain http(s) URLs.
  */
 import { Redis } from '@upstash/redis';
+import { ownerAuth, denyOwner, cors } from './_lib.js';
 
 const KEY = 'beadedfinery:products';
 const BACKUP_KEY = 'beadedfinery:products:backup';
-const ADMIN_KEY = process.env.ADMIN_KEY || '';
 
 let redis = null;
 try {
@@ -27,7 +27,6 @@ const readBody = (req) => {
   if (!req.body) return {};
   return typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body;
 };
-const isOwner = (req) => ADMIN_KEY && req.headers['x-admin-key'] === ADMIN_KEY;
 
 const CATEGORIES = ['Bangles','Bracelets','Rings/Ringlets','Earrings','Necklaces','Anklets','Stainless steel jewelry','Sets','Keychains','Others'];
 
@@ -68,15 +67,12 @@ function clean(p) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-admin-key');
+  cors(req, res, 'GET, PUT, DELETE, OPTIONS');
   res.setHeader('Cache-Control', 'no-store');
   if (req.method === 'OPTIONS') return res.status(204).end();
 
-  if (['PUT', 'DELETE'].includes(req.method) && !isOwner(req)) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
+  const auth = await ownerAuth(req, redis);
+  if (['PUT', 'DELETE'].includes(req.method) && !auth.ok) return denyOwner(res, auth);
 
   if (!redis) {
     if (req.method === 'GET') return res.status(200).json([]);
@@ -87,7 +83,7 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       // owner-only: "is there a previous catalogue saved that I could undo to?"
       if (req.query && req.query.backup) {
-        if (!isOwner(req)) return res.status(401).json({ error: 'Unauthorized' });
+        if (!auth.ok) return denyOwner(res, auth);
         const raw = await redis.get(BACKUP_KEY);
         const backup = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : null;
         const count = backup && Array.isArray(backup.products) ? backup.products.length : 0;

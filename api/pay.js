@@ -20,7 +20,7 @@
  *   SITE_URL             https://beadedfinery.com            (optional; else derived from host)
  */
 import { Redis } from '@upstash/redis';
-import { clientIp, rateLimited } from './_lib.js';
+import { clientIp, rateLimited, ownerAuth, denyOwner, cors, siteUrl } from './_lib.js';
 import { confirmTracker } from './_safepay.js';
 
 const ORDERS_KEY = 'beadedfinery:orders';
@@ -29,8 +29,6 @@ const SECRET = process.env.SAFEPAY_SECRET_KEY || '';
 const PUBLIC = process.env.SAFEPAY_PUBLIC_KEY || '';
 const INTENT = (process.env.SAFEPAY_INTENT || 'CYBERSOURCE').toUpperCase();
 const ENABLED = !!(SECRET && PUBLIC);
-const ADMIN_KEY = process.env.ADMIN_KEY || '';
-const isOwner = (req) => ADMIN_KEY && req.headers['x-admin-key'] === ADMIN_KEY;
 
 const API_BASE = ENV === 'production' ? 'https://api.getsafepay.com' : 'https://sandbox.api.getsafepay.com';
 const CHECKOUT_BASE = ENV === 'production' ? 'https://getsafepay.com/embedded/' : 'https://sandbox.api.getsafepay.com/embedded/';
@@ -46,13 +44,6 @@ const readBody = (req) => {
   if (!req.body) return {};
   return typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body;
 };
-
-function siteUrl(req) {
-  if (process.env.SITE_URL) return process.env.SITE_URL.replace(/\/$/, '');
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
-  const proto = req.headers['x-forwarded-proto'] || 'https';
-  return `${proto}://${host}`;
-}
 
 /** POST JSON to Safepay with the merchant secret, time-boxed so a hung upstream fails fast. */
 async function safepayPost(path, body) {
@@ -73,9 +64,7 @@ async function safepayPost(path, body) {
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-admin-key');
+  cors(req, res, 'GET, POST, OPTIONS');
   res.setHeader('Cache-Control', 'no-store');
   if (req.method === 'OPTIONS') return res.status(204).end();
 
@@ -83,7 +72,8 @@ export default async function handler(req, res) {
   // payment and (if it succeeded) mark it paid. Used by the admin "Re-check payment" button.
   const recheck = req.method === 'GET' && (req.query && req.query.recheck);
   if (recheck) {
-    if (!isOwner(req)) return res.status(401).json({ error: 'Unauthorized' });
+    const auth = await ownerAuth(req, redis);
+    if (!auth.ok) return denyOwner(res, auth);
     if (!ENABLED || !redis) return res.status(503).json({ error: 'Card payments are not configured' });
     try {
       const list = (await redis.get(ORDERS_KEY)) || [];
