@@ -53,6 +53,14 @@ const sanitizeOrder = (raw) => {
         return it;
       })
     : [];
+  const total = Math.max(0, Number(o.total) || 0);
+  const method = String(o.method || '').slice(0, 40);
+  // Cash on delivery = 50% advance now, the rest in cash on delivery. The advance is ALWAYS
+  // worked out here from the total — never taken from the client — so it can't be tampered with.
+  const isCod = method === 'Cash on Delivery';
+  const advance = isCod ? Math.ceil(total / 2) : 0;
+  const ADVANCE_METHODS = ['Credit / Debit Card', 'Easypaisa', 'JazzCash', 'Bank Transfer'];
+  const advanceMethod = ADVANCE_METHODS.includes(o.advanceMethod) ? o.advanceMethod : 'Bank Transfer';
   return {
     id: String(o.id || 'BF-' + Date.now().toString().slice(-7)).slice(0, 24),
     name: String(o.name || '').slice(0, 120),
@@ -62,11 +70,12 @@ const sanitizeOrder = (raw) => {
     address: String(o.address || '').slice(0, 400),
     postal: String(o.postal || '').slice(0, 20),
     notes: String(o.notes || '').slice(0, 500),
-    method: String(o.method || '').slice(0, 40),
+    method,
     items,
     subtotal: Math.max(0, Number(o.subtotal) || 0),
     shipping: Math.max(0, Number(o.shipping) || 0),
-    total: Math.max(0, Number(o.total) || 0),
+    total,
+    ...(isCod ? { advance, balance: total - advance, advanceMethod } : {}),
     status: 'Pending Payment Verification',
     date: new Date().toISOString().slice(0, 10),
     createdAt: new Date().toISOString(),

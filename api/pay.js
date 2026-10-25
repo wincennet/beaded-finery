@@ -119,10 +119,12 @@ export default async function handler(req, res) {
     const list = (await redis.get(ORDERS_KEY)) || [];
     const order = Array.isArray(list) ? list.find((o) => o.id === orderId) : null;
     if (!order) return res.status(404).json({ error: 'Order not found' });
-    if (order.paid) return res.status(409).json({ error: 'Order already paid' });
+    if (order.paid || order.advancePaid) return res.status(409).json({ error: 'Order already paid' });
 
+    // Cash-on-delivery orders only pay the advance (50%) online; everything else pays the total.
+    const payable = order.method === 'Cash on Delivery' ? Number(order.advance) || 0 : Number(order.total) || 0;
     // Safepay wants the currency's minor unit: PKR is sent in paisa (1 rupee = 100 paisa).
-    const rupees = Math.max(1, Math.round(Number(order.total) || 0));
+    const rupees = Math.max(1, Math.round(payable));
     const amount = rupees * 100;
 
     // 1. payment session -> tracker

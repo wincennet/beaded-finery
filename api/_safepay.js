@@ -54,7 +54,7 @@ export async function confirmTracker(redis, tracker) {
     const o = Array.isArray(list) ? list.find((x) => x.safepayTracker === tracker) : null;
     if (!o) return out;
     out.orderId = o.id;
-    if (o.paid) { out.verified = true; return out; }
+    if (o.paid || o.advancePaid) { out.verified = true; return out; }
     const t = await fetchTracker(tracker);
     if (t) {
       out.state = t.state; out.status = t.status;
@@ -62,7 +62,8 @@ export async function confirmTracker(redis, tracker) {
       o.safepayCheckedAt = new Date().toISOString();
     }
     if (t && t.ended) {
-      o.paid = true;
+      // cash-on-delivery orders only pay the advance online; the rest is collected on delivery
+      if (o.method === 'Cash on Delivery') o.advancePaid = true; else o.paid = true;
       o.paidAt = new Date().toISOString();
       o.paymentRef = tracker.slice(0, 60);
       o.status = 'Processing';
